@@ -1,0 +1,22 @@
+.editor {
+  height: 100%;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+}
+
+.editor .cm-editor {
+  height: 100%;
+}
+
+.editor .cm-scroller {
+  overflow: auto;
+}
+
+.editor .cm-content {
+  padding: var(--space-4);
+}
+
+.editor .cm-focused {
+  outline: none;
+}
