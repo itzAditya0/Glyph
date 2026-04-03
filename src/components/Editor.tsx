@@ -3,6 +3,7 @@ import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
+import { GFM } from "@lezer/markdown";
 import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { wysiwyg } from "../extensions/wysiwyg";
@@ -90,7 +91,7 @@ export default function Editor({
     const state = EditorState.create({
       doc: value,
       extensions: [
-        markdown({ codeLanguages: languages }),
+        markdown({ codeLanguages: languages, extensions: GFM }),
         history(),
         markdownKeybindings,
         keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -160,10 +161,10 @@ export default function Editor({
     const view = viewRef.current;
     if (!view) return;
 
-    const ext = wysiwygMode ? wysiwyg() : [];
-    console.log("WYSIWYG reconfigure:", wysiwygMode, ext);
     view.dispatch({
-      effects: wysiwygCompartment.reconfigure(ext),
+      effects: wysiwygCompartment.reconfigure(
+        wysiwygMode ? wysiwyg() : []
+      ),
     });
   }, [wysiwygMode]);
 
