@@ -47,3 +47,26 @@
 .zen:hover {
   cursor: auto;
 }
+
+.zenHint {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  padding: 4px 12px;
+  border-radius: var(--border-radius);
+  opacity: 0;
+  animation: zenHintFade 3s ease forwards;
+  z-index: 200;
+  pointer-events: none;
+}
+
+@keyframes zenHintFade {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
