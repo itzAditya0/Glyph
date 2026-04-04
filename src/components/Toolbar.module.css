@@ -67,3 +67,8 @@
   background: var(--color-border);
   color: var(--color-accent);
 }
+
+.recentWrapper {
+  position: relative;
+  -webkit-app-region: no-drag;
+}

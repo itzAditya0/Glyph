@@ -1,10 +1,11 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { GFM } from "@lezer/markdown";
 import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { wysiwyg } from "../extensions/wysiwyg";
 import styles from "./Editor.module.css";
@@ -45,21 +46,31 @@ function wrapSelection(view: EditorView, marker: string): boolean {
   return true;
 }
 
-export default function Editor({
+export interface EditorHandle {
+  openSearch: () => void;
+}
+
+const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
   value,
   onChange,
   onCursorChange,
   resolvedTheme,
   wysiwygMode = false,
-}: EditorProps) {
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView>();
+  const viewRef = useRef<EditorView>(null);
   const onChangeRef = useRef(onChange);
   const onCursorChangeRef = useRef(onCursorChange);
 
   // Keep refs in sync
   onChangeRef.current = onChange;
   onCursorChangeRef.current = onCursorChange;
+
+  useImperativeHandle(ref, () => ({
+    openSearch: () => {
+      if (viewRef.current) openSearchPanel(viewRef.current);
+    },
+  }));
 
   // Create editor on mount, destroy on unmount
   useEffect(() => {
@@ -94,7 +105,9 @@ export default function Editor({
         markdown({ codeLanguages: languages, extensions: GFM }),
         history(),
         markdownKeybindings,
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        search({ top: true }),
+        highlightSelectionMatches(),
         EditorView.lineWrapping,
         themeCompartment.of(resolvedTheme === "dark" ? oneDark : []),
         wysiwygCompartment.of(wysiwygMode ? wysiwyg() : []),
@@ -169,4 +182,6 @@ export default function Editor({
   }, [wysiwygMode]);
 
   return <div ref={containerRef} className={styles.editor} />;
-}
+});
+
+export default Editor;

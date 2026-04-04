@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Editor from "./components/Editor";
+import type { EditorHandle } from "./components/Editor";
 import { Preview } from "./components/Preview";
 import Toolbar from "./components/Toolbar";
 import StatusBar from "./components/StatusBar";
 import { useMarkdown } from "./hooks/useMarkdown";
 import { useFile } from "./hooks/useFile";
 import { useTheme } from "./hooks/useTheme";
+import { useAutoSave } from "./hooks/useAutoSave";
+import { useRecentFiles } from "./hooks/useRecentFiles";
 import styles from "./App.module.css";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -60,6 +63,7 @@ This is a footnote reference[^1].
 `;
 
 function App() {
+  const editorRef = useRef<EditorHandle>(null);
   const [content, setContent] = useState(DEFAULT_MARKDOWN);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [wysiwygMode, setWysiwygMode] = useState(false);
@@ -74,6 +78,19 @@ function App() {
     openFileFromPath,
     setSavedContent,
   } = useFile(content);
+
+  const { recentFiles, addRecentFile, clearRecentFiles } = useRecentFiles();
+  const { autoSaveEnabled, toggleAutoSave } = useAutoSave(
+    content,
+    filePath,
+    isDirty,
+    saveFile
+  );
+
+  // Track opened files in recent files list
+  useEffect(() => {
+    if (filePath) addRecentFile(filePath);
+  }, [filePath, addRecentFile]);
 
   const wordCount = useMemo(
     () => content.split(/\s+/).filter(Boolean).length,
@@ -217,10 +234,15 @@ function App() {
         onToggleTheme={toggleTheme}
         wysiwygMode={wysiwygMode}
         onToggleWysiwyg={() => setWysiwygMode((m) => !m)}
+        recentFiles={recentFiles}
+        onOpenRecentFile={handleOpenFromPath}
+        onClearRecentFiles={clearRecentFiles}
+        onOpenSearch={() => editorRef.current?.openSearch()}
       />
       <div className={styles.panes}>
         <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
           <Editor
+            ref={editorRef}
             value={content}
             onChange={setContent}
             onCursorChange={setCursor}
@@ -242,6 +264,8 @@ function App() {
         cursorCol={cursor.col}
         wordCount={wordCount}
         isDirty={isDirty}
+        autoSaveEnabled={autoSaveEnabled}
+        onToggleAutoSave={toggleAutoSave}
       />
     </div>
   );

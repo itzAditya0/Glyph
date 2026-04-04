@@ -1,4 +1,11 @@
+import { useState } from "react";
+import RecentFiles from "./RecentFiles";
 import styles from "./Toolbar.module.css";
+
+interface RecentFile {
+  path: string;
+  openedAt: number;
+}
 
 interface ToolbarProps {
   fileName: string | null;
@@ -8,6 +15,10 @@ interface ToolbarProps {
   onToggleTheme: () => void;
   wysiwygMode: boolean;
   onToggleWysiwyg: () => void;
+  recentFiles: RecentFile[];
+  onOpenRecentFile: (path: string) => void;
+  onClearRecentFiles: () => void;
+  onOpenSearch: () => void;
 }
 
 function SunIcon() {
@@ -90,6 +101,42 @@ function WysiwygIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="7" cy="7" r="4.5" />
+      <line x1="10.2" y1="10.2" x2="14" y2="14" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="8" r="6.5" />
+      <polyline points="8 4 8 8 11 9.5" />
+    </svg>
+  );
+}
+
 export default function Toolbar({
   fileName,
   isDirty,
@@ -97,7 +144,13 @@ export default function Toolbar({
   onToggleTheme,
   wysiwygMode,
   onToggleWysiwyg,
+  recentFiles,
+  onOpenRecentFile,
+  onClearRecentFiles,
+  onOpenSearch,
 }: ToolbarProps) {
+  const [showRecent, setShowRecent] = useState(false);
+
   return (
     <div className={styles.toolbar}>
       <div className={styles.left}>
@@ -117,8 +170,34 @@ export default function Toolbar({
         </svg>
         <span className={styles.fileName}>{fileName ?? "Untitled"}</span>
         {isDirty && <span className={styles.dirtyDot} />}
+        <div className={styles.recentWrapper}>
+          <button
+            className={styles.themeToggle}
+            onClick={() => setShowRecent((s) => !s)}
+            aria-label="Recent files"
+            title="Recent files"
+          >
+            <ClockIcon />
+          </button>
+          {showRecent && (
+            <RecentFiles
+              files={recentFiles}
+              onOpenFile={onOpenRecentFile}
+              onClear={onClearRecentFiles}
+              onClose={() => setShowRecent(false)}
+            />
+          )}
+        </div>
       </div>
       <div className={styles.right}>
+        <button
+          className={styles.themeToggle}
+          onClick={onOpenSearch}
+          aria-label="Find & Replace"
+          title="Find & Replace (Cmd+F)"
+        >
+          <SearchIcon />
+        </button>
         <button
           className={`${styles.themeToggle} ${wysiwygMode ? styles.active : ""}`}
           onClick={onToggleWysiwyg}
