@@ -28,51 +28,69 @@ export function useFile(content: string): UseFileReturn {
   const isDirty = useMemo(() => content !== savedContent, [content, savedContent]);
 
   const openFile = useCallback(async (): Promise<string | null> => {
-    const selected = await open({
-      multiple: false,
-      filters: MARKDOWN_FILTERS,
-    });
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: MARKDOWN_FILTERS,
+      });
 
-    if (selected === null) {
+      if (selected === null) {
+        return null;
+      }
+
+      const fileContent = await invoke<string>("read_file", { path: selected });
+      setFilePath(selected);
+      setSavedContent(fileContent);
+      return fileContent;
+    } catch (err) {
+      console.error("Failed to open file:", err);
       return null;
     }
-
-    const fileContent = await invoke<string>("read_file", { path: selected });
-    setFilePath(selected);
-    setSavedContent(fileContent);
-    return fileContent;
   }, []);
 
   const saveFileAs = useCallback(async (contentToSave: string): Promise<void> => {
-    const savePath = await save({
-      filters: MARKDOWN_SAVE_FILTERS,
-      defaultPath: filePath ?? "untitled.md",
-    });
+    try {
+      const savePath = await save({
+        filters: MARKDOWN_SAVE_FILTERS,
+        defaultPath: filePath ?? "untitled.md",
+      });
 
-    if (savePath === null) {
-      return;
+      if (savePath === null) {
+        return;
+      }
+
+      await invoke("save_file", { path: savePath, content: contentToSave });
+      setFilePath(savePath);
+      setSavedContent(contentToSave);
+    } catch (err) {
+      console.error("Failed to save file:", err);
     }
-
-    await invoke("save_file", { path: savePath, content: contentToSave });
-    setFilePath(savePath);
-    setSavedContent(contentToSave);
   }, [filePath]);
 
   const saveFile = useCallback(async (contentToSave: string): Promise<void> => {
-    if (filePath === null) {
-      await saveFileAs(contentToSave);
-      return;
-    }
+    try {
+      if (filePath === null) {
+        await saveFileAs(contentToSave);
+        return;
+      }
 
-    await invoke("save_file", { path: filePath, content: contentToSave });
-    setSavedContent(contentToSave);
+      await invoke("save_file", { path: filePath, content: contentToSave });
+      setSavedContent(contentToSave);
+    } catch (err) {
+      console.error("Failed to save file:", err);
+    }
   }, [filePath, saveFileAs]);
 
   const openFileFromPath = useCallback(async (path: string): Promise<string> => {
-    const fileContent = await invoke<string>("read_file", { path });
-    setFilePath(path);
-    setSavedContent(fileContent);
-    return fileContent;
+    try {
+      const fileContent = await invoke<string>("read_file", { path });
+      setFilePath(path);
+      setSavedContent(fileContent);
+      return fileContent;
+    } catch (err) {
+      console.error("Failed to open file from path:", err);
+      throw err;
+    }
   }, []);
 
   return {

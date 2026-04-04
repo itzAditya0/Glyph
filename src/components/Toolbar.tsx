@@ -9,6 +9,7 @@ interface RecentFile {
 
 interface ToolbarProps {
   fileName: string | null;
+  filePath: string | null;
   isDirty: boolean;
   theme: "light" | "dark" | "system";
   resolvedTheme: "light" | "dark";
@@ -139,6 +140,7 @@ function ClockIcon() {
 
 export default function Toolbar({
   fileName,
+  filePath,
   isDirty,
   resolvedTheme,
   onToggleTheme,
@@ -149,6 +151,7 @@ export default function Toolbar({
   onClearRecentFiles,
   onOpenSearch,
 }: ToolbarProps) {
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
   const [showRecent, setShowRecent] = useState(false);
 
   return (
@@ -168,13 +171,14 @@ export default function Toolbar({
           <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z" />
           <polyline points="9 1 9 5 13 5" />
         </svg>
-        <span className={styles.fileName}>{fileName ?? "Untitled"}</span>
+        <span className={styles.fileName} title={filePath ?? "Untitled"}>{fileName ?? "Untitled"}</span>
         {isDirty && <span className={styles.dirtyDot} />}
         <div className={styles.recentWrapper}>
           <button
             className={styles.themeToggle}
             onClick={() => setShowRecent((s) => !s)}
             aria-label="Recent files"
+            aria-expanded={showRecent}
             title="Recent files"
           >
             <ClockIcon />
@@ -194,13 +198,14 @@ export default function Toolbar({
           className={styles.themeToggle}
           onClick={onOpenSearch}
           aria-label="Find & Replace"
-          title="Find & Replace (Cmd+F)"
+          title={isMac ? "Find & Replace (⌘F)" : "Find & Replace (Ctrl+F)"}
         >
           <SearchIcon />
         </button>
         <button
           className={`${styles.themeToggle} ${wysiwygMode ? styles.active : ""}`}
           onClick={onToggleWysiwyg}
+          aria-pressed={wysiwygMode}
           aria-label="Toggle WYSIWYG mode"
           title={wysiwygMode ? "Split pane view" : "WYSIWYG view"}
         >

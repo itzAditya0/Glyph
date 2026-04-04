@@ -44,11 +44,13 @@ Inline code works too: \`const x = 42;\`
 
 ## Tables
 
-| Feature       | Status    |
-|---------------|-----------|
-| Live Preview  | Done      |
-| File Save     | Coming    |
-| Dark Theme    | Coming    |
+| Feature       | Status |
+|---------------|--------|
+| Live Preview  | ✓      |
+| WYSIWYG Mode  | ✓      |
+| Dark Theme    | ✓      |
+| Find & Replace| ✓      |
+| Auto-save     | ✓      |
 
 ## Blockquote
 
@@ -98,7 +100,7 @@ function App() {
     [content]
   );
 
-  const fileName = filePath ? filePath.split("/").pop() ?? null : null;
+  const fileName = filePath ? filePath.replace(/\\/g, "/").split("/").pop() ?? null : null;
 
   // Set initial savedContent to match default markdown
   useEffect(() => {
@@ -116,18 +118,26 @@ function App() {
   }, [fileName, isDirty]);
 
   const handleOpenFile = useCallback(async () => {
+    if (isDirty) {
+      const ok = window.confirm("You have unsaved changes. Open a new file anyway?");
+      if (!ok) return;
+    }
     const fileContent = await openFile();
     if (fileContent !== null) {
       setContent(fileContent);
     }
-  }, [openFile]);
+  }, [openFile, isDirty]);
 
   const handleOpenFromPath = useCallback(
     async (path: string) => {
+      if (isDirty) {
+        const ok = window.confirm("You have unsaved changes. Open a new file anyway?");
+        if (!ok) return;
+      }
       const fileContent = await openFileFromPath(path);
       setContent(fileContent);
     },
-    [openFileFromPath]
+    [openFileFromPath, isDirty]
   );
 
   // Keyboard shortcuts
@@ -136,14 +146,14 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         if (e.shiftKey) {
-          saveFileAs(content);
+          saveFileAs(content).catch(() => {});
         } else {
-          saveFile(content);
+          saveFile(content).catch(() => {});
         }
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "o") {
         e.preventDefault();
-        handleOpenFile();
+        handleOpenFile().catch(() => {});
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "z") {
         e.preventDefault();
@@ -236,6 +246,7 @@ function App() {
     <div className={`${styles.layout} ${zenMode ? styles.zen : ""}`}>
       {!zenMode && <Toolbar
         fileName={fileName}
+        filePath={filePath}
         isDirty={isDirty}
         theme={theme}
         resolvedTheme={resolvedTheme}
@@ -247,6 +258,9 @@ function App() {
         onClearRecentFiles={clearRecentFiles}
         onOpenSearch={() => editorRef.current?.openSearch()}
       />}
+      {zenMode && (
+        <div className={styles.zenHint}>Press Esc to exit zen mode</div>
+      )}
       <div className={styles.panes}>
         <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
           <Editor

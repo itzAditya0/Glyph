@@ -11,6 +11,7 @@
   --color-text-muted: #8b949e;
   --color-accent: #0969da;
   --color-accent-hover: #0550ae;
+  --color-accent-rgb: 9, 105, 218;
   --color-danger: #cf222e;
   --color-success: #1a7f37;
 
@@ -58,11 +59,17 @@
   --color-text-muted: #6e7681;
   --color-accent: #58a6ff;
   --color-accent-hover: #79c0ff;
+  --color-accent-rgb: 88, 166, 255;
   --color-danger: #f85149;
   --color-success: #3fb950;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.dark ::selection {
+  background: rgba(88, 166, 255, 0.4);
+  color: var(--color-text);
 }
 
 /* Reset & Base */
@@ -110,4 +117,12 @@ body {
 ::selection {
   background: var(--color-accent);
   color: #ffffff;
+}
+
+/* Focus visible for keyboard navigation */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }

@@ -6,6 +6,7 @@ interface PreviewProps {
 }
 
 export function Preview({ html }: PreviewProps) {
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
   const sanitized = DOMPurify.sanitize(html);
   const isEmpty = sanitized.trim() === "";
 
@@ -13,7 +14,7 @@ export function Preview({ html }: PreviewProps) {
     return (
       <div className={styles.preview}>
         <div className={styles.empty}>
-          Start typing or open a file (Cmd+O)
+          Start typing or open a file ({isMac ? "⌘" : "Ctrl+"}O)
         </div>
       </div>
     );

@@ -9,6 +9,9 @@
   align-items: center;
   padding: 0 var(--space-4, 16px);
   user-select: none;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  gap: 0;
 }
 
 .item {
@@ -44,7 +47,8 @@
   white-space: nowrap;
 }
 
-.autoSave:hover {
+.autoSave:hover,
+.autoSave:focus-visible {
   color: var(--color-text);
 }
 

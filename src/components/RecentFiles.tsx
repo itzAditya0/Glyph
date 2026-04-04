@@ -43,7 +43,7 @@ export default function RecentFiles({
   }, [onClose]);
 
   return (
-    <div ref={ref} className={styles.dropdown}>
+    <div ref={ref} className={styles.dropdown} role="menu">
       {files.length === 0 ? (
         <div className={styles.empty}>No recent files</div>
       ) : (
@@ -52,6 +52,7 @@ export default function RecentFiles({
             <button
               key={file.path}
               className={styles.item}
+              role="menuitem"
               onClick={() => {
                 onOpenFile(file.path);
                 onClose();
@@ -64,6 +65,7 @@ export default function RecentFiles({
           <div className={styles.divider} />
           <button
             className={styles.clearBtn}
+            role="menuitem"
             onClick={() => {
               onClear();
               onClose();
