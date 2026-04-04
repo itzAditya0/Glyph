@@ -32,3 +32,22 @@
   white-space: nowrap;
   color: var(--color-accent);
 }
+
+.autoSave {
+  background: none;
+  border: none;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.autoSave:hover {
+  color: var(--color-text);
+}
+
+.autoSaveOn {
+  color: var(--color-accent);
+}
