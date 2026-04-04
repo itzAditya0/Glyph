@@ -34,3 +34,16 @@
   flex: 1;
   overflow: hidden;
 }
+
+/* Zen / distraction-free mode */
+.zen {
+  cursor: none;
+}
+
+.zen .panes {
+  height: 100vh;
+}
+
+.zen:hover {
+  cursor: auto;
+}

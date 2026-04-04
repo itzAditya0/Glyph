@@ -67,6 +67,7 @@ function App() {
   const [content, setContent] = useState(DEFAULT_MARKDOWN);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [wysiwygMode, setWysiwygMode] = useState(false);
+  const [zenMode, setZenMode] = useState(false);
   const html = useMarkdown(content);
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const {
@@ -144,10 +145,17 @@ function App() {
         e.preventDefault();
         handleOpenFile();
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        setZenMode((z) => !z);
+      }
+      if (e.key === "Escape" && zenMode) {
+        setZenMode(false);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [content, saveFile, saveFileAs, handleOpenFile]);
+  }, [content, saveFile, saveFileAs, handleOpenFile, zenMode]);
 
   // Drag and drop (Tauri only)
   useEffect(() => {
@@ -225,8 +233,8 @@ function App() {
   }, [isDirty]);
 
   return (
-    <div className={styles.layout}>
-      <Toolbar
+    <div className={`${styles.layout} ${zenMode ? styles.zen : ""}`}>
+      {!zenMode && <Toolbar
         fileName={fileName}
         isDirty={isDirty}
         theme={theme}
@@ -238,7 +246,7 @@ function App() {
         onOpenRecentFile={handleOpenFromPath}
         onClearRecentFiles={clearRecentFiles}
         onOpenSearch={() => editorRef.current?.openSearch()}
-      />
+      />}
       <div className={styles.panes}>
         <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
           <Editor
@@ -259,14 +267,16 @@ function App() {
           </>
         )}
       </div>
-      <StatusBar
-        cursorLine={cursor.line}
-        cursorCol={cursor.col}
-        wordCount={wordCount}
-        isDirty={isDirty}
-        autoSaveEnabled={autoSaveEnabled}
-        onToggleAutoSave={toggleAutoSave}
-      />
+      {!zenMode && (
+        <StatusBar
+          cursorLine={cursor.line}
+          cursorCol={cursor.col}
+          wordCount={wordCount}
+          isDirty={isDirty}
+          autoSaveEnabled={autoSaveEnabled}
+          onToggleAutoSave={toggleAutoSave}
+        />
+      )}
     </div>
   );
 }
