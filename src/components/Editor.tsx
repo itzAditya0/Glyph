@@ -8,6 +8,7 @@ import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { wysiwyg } from "../extensions/wysiwyg";
+import { imagePreview } from "../extensions/imagePreview";
 import styles from "./Editor.module.css";
 
 interface CursorPosition {
@@ -25,6 +26,7 @@ interface EditorProps {
 
 const themeCompartment = new Compartment();
 const wysiwygCompartment = new Compartment();
+const imagePreviewCompartment = new Compartment();
 
 function wrapSelection(view: EditorView, marker: string): boolean {
   const { from, to } = view.state.selection.main;
@@ -111,6 +113,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
         EditorView.lineWrapping,
         themeCompartment.of(resolvedTheme === "dark" ? oneDark : []),
         wysiwygCompartment.of(wysiwygMode ? wysiwyg() : []),
+        imagePreviewCompartment.of(wysiwygMode ? [] : imagePreview()),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChangeRef.current(update.state.doc.toString());
@@ -175,9 +178,10 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
     if (!view) return;
 
     view.dispatch({
-      effects: wysiwygCompartment.reconfigure(
-        wysiwygMode ? wysiwyg() : []
-      ),
+      effects: [
+        wysiwygCompartment.reconfigure(wysiwygMode ? wysiwyg() : []),
+        imagePreviewCompartment.reconfigure(wysiwygMode ? [] : imagePreview()),
+      ],
     });
   }, [wysiwygMode]);
 
