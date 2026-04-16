@@ -2,6 +2,17 @@
   "name": "glyph",
   "private": true,
   "version": "0.1.0",
+  "description": "A lightweight, fast Markdown editor built with Tauri, React, and CodeMirror 6.",
+  "keywords": ["markdown", "editor", "tauri", "desktop", "codemirror", "wysiwyg"],
+  "license": "MIT",
+  "homepage": "https://github.com/itzAditya0/Glyph",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itzAditya0/Glyph.git"
+  },
+  "bugs": {
+    "url": "https://github.com/itzAditya0/Glyph/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
