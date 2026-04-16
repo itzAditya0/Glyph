@@ -7,7 +7,11 @@ interface PreviewProps {
 
 export function Preview({ html }: PreviewProps) {
   const isMac = navigator.platform.toUpperCase().includes("MAC");
-  const sanitized = DOMPurify.sanitize(html);
+  // `data-source` preserves the original diagram text on mermaid placeholders
+  // so theme re-renders can restore it after mermaid.run replaces innerHTML.
+  // DOMPurify v3 defaults ALLOW_DATA_ATTR to false; we re-enable because
+  // markdown-it has `html: false` (no user-supplied HTML reaches sanitize).
+  const sanitized = DOMPurify.sanitize(html, { ALLOW_DATA_ATTR: true });
   const isEmpty = sanitized.trim() === "";
 
   if (isEmpty) {

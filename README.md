@@ -13,13 +13,14 @@ A lightweight, fast Markdown editor built with [Tauri v2](https://v2.tauri.app),
 - **WYSIWYG inline mode** — Typora-style editing where markdown syntax renders in-place with cursor-reveal
 - **Syntax highlighting** — Shiki-powered code blocks across 9+ languages
 - **LaTeX math** — inline `$…$` and block `$$…$$` rendered via KaTeX
+- **Mermaid diagrams** — flowcharts, sequence, state, and gantt charts via fenced ` ```mermaid` blocks
 - **GFM support** — tables, task lists, footnotes, strikethrough
 - **Find & replace** — full-featured search via `Cmd+F`
 - **Recent files** — quick access to your last-edited documents
 - **Auto-save** — background saves so you don't lose work
 - **Zen mode** — distraction-free writing, toggled with `Cmd+Shift+Z`
 - **Image preview** — inline image thumbnails in the editor
-- **Export & share** — HTML export, PDF via print, and copy-as-rich-text for pasting into other apps
+- **Export & share** — HTML export (with inlined SVG diagrams), PDF via print, and copy-as-rich-text for pasting into other apps
 - **Themes** — light, dark, and system-aware
 - **File associations** — double-click `.md` / `.markdown` / `.mdown` / `.mkd` files to open in Glyph
 - **Drag & drop** — drop markdown files onto the editor
@@ -51,7 +52,7 @@ macOS uses `Cmd`; Linux and Windows use `Ctrl`.
 | Backend  | Tauri v2 (Rust)                     |
 | Frontend | React 19 + Vite 7                   |
 | Editor   | CodeMirror 6                        |
-| Markdown | markdown-it + Shiki + KaTeX         |
+| Markdown | markdown-it + Shiki + KaTeX + Mermaid |
 | Styling  | Vanilla CSS with CSS Modules        |
 
 ## Getting Started

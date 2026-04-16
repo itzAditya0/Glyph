@@ -16,6 +16,37 @@ const md = new MarkdownIt({
   .use(footnote)
   .use(katex, { output: "html", throwOnError: false });
 
+/**
+ * Intercept ```mermaid fences and emit a placeholder that a post-mount effect
+ * (in App.tsx) or the pre-render utility (src/utils/mermaidRender.ts) can
+ * transform into SVG. Wraps whatever `fence` rule is currently installed and
+ * delegates non-mermaid fences to it, so Shiki's highlighter keeps working.
+ *
+ * Must be invoked BOTH at module load (covers the pre-Shiki window) AND again
+ * after Shiki's plugin attaches — because Shiki overwrites `renderer.rules.fence`.
+ */
+function installMermaidFence(mdInstance: MarkdownIt) {
+  const downstream = mdInstance.renderer.rules.fence;
+  mdInstance.renderer.rules.fence = (tokens, idx, options, env, self) => {
+    const token = tokens[idx];
+    const info = (token.info || "").trim().toLowerCase();
+    if (info === "mermaid") {
+      // Mermaid source contains `-->` (flowchart arrows), which DOMPurify
+      // treats as an HTML-comment-terminator and strips from data-attrs.
+      // URL-encode to keep the attribute a safe alphanumeric+%xx payload;
+      // decode with decodeURIComponent when reading.
+      const encoded = encodeURIComponent(token.content);
+      const escaped = mdInstance.utils.escapeHtml(token.content);
+      return `<pre class="mermaid" data-source="${encoded}">${escaped}</pre>`;
+    }
+    return downstream
+      ? downstream(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+  };
+}
+
+installMermaidFence(md);
+
 let shikiInitialized = false;
 let shikiInitPromise: Promise<void> | null = null;
 
@@ -45,6 +76,8 @@ function initShiki(): Promise<void> {
         },
       })
     );
+    // Shiki replaces the `fence` rule — re-install our override so it wraps Shiki's.
+    installMermaidFence(md);
     shikiInitialized = true;
   });
 

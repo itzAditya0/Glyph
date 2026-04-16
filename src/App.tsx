@@ -11,7 +11,13 @@ import { useTheme } from "./hooks/useTheme";
 import { useAutoSave } from "./hooks/useAutoSave";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { buildHtmlDocument } from "./utils/exportHtml";
+import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRender";
 import styles from "./App.module.css";
+
+type MermaidModule = {
+  initialize: (config: Record<string, unknown>) => void;
+  run: (options: { querySelector: string; suppressErrors?: boolean }) => Promise<unknown>;
+};
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -61,6 +67,15 @@ Inline: $E = mc^2$ and $\\alpha + \\beta = \\gamma$.
 Block:
 
 $$ \\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} $$
+
+## Diagram
+
+\`\`\`mermaid
+graph TD
+    A[Start] --> B{Decision}
+    B -->|yes| C[Do it]
+    B -->|no| D[Stop]
+\`\`\`
 
 ## Blockquote
 
@@ -127,6 +142,61 @@ function App() {
     });
   }, [fileName, isDirty]);
 
+  // Mermaid orchestration: lazy-load on first sighting, re-init on theme change,
+  // run on every html change. `data-source` on each placeholder lets us restore
+  // the original diagram text across theme-only re-renders (since mermaid.run
+  // replaces innerHTML with SVG).
+  const mermaidModRef = useRef<MermaidModule | null>(null);
+  const lastMermaidThemeRef = useRef<"light" | "dark" | null>(null);
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      const nodes = document.querySelectorAll<HTMLElement>(".mermaid");
+      if (nodes.length === 0 && mermaidModRef.current === null) return;
+      if (ignore) return;
+
+      if (mermaidModRef.current === null) {
+        const mod = await import("mermaid");
+        if (ignore) return;
+        mermaidModRef.current = mod.default as unknown as MermaidModule;
+      }
+      const mermaid = mermaidModRef.current;
+
+      const themeChanged = lastMermaidThemeRef.current !== resolvedTheme;
+      if (themeChanged) {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: resolvedTheme === "dark" ? "dark" : "default",
+          securityLevel: "strict",
+        });
+        lastMermaidThemeRef.current = resolvedTheme;
+        // Theme-only change: restore text content from data-source (URL-
+        // encoded by the fence rule) and strip `data-processed` so
+        // mermaid.run re-renders against fresh source.
+        nodes.forEach((node) => {
+          const src = node.dataset.source;
+          if (src) {
+            try {
+              node.textContent = decodeURIComponent(src);
+            } catch {
+              node.textContent = src;
+            }
+            node.removeAttribute("data-processed");
+          }
+        });
+      }
+
+      try {
+        await mermaid.run({ querySelector: ".mermaid", suppressErrors: true });
+      } catch (err) {
+        console.warn("mermaid.run failed:", err);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [html, resolvedTheme]);
+
   const handleOpenFile = useCallback(async () => {
     if (isDirty) {
       const ok = window.confirm("You have unsaved changes. Open a new file anyway?");
@@ -180,14 +250,20 @@ function App() {
     };
   }, []);
 
-  const handlePrint = useCallback(() => {
+  const handlePrint = useCallback(async () => {
     // Clean any stale print root from a previous aborted print.
     document.getElementById("glyph-print-root")?.remove();
 
     const printRoot = document.createElement("div");
     printRoot.id = "glyph-print-root";
     printRoot.className = "glyph-preview";
-    const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true });
+    const fragment = DOMPurify.sanitize(html, {
+      RETURN_DOM_FRAGMENT: true,
+      ALLOW_DATA_ATTR: true,
+    });
+    // Pre-render any mermaid diagrams into inline SVG before the fragment
+    // enters the DOM, so the print dialog captures rendered diagrams.
+    await prerenderMermaidFragment(fragment, "print");
     printRoot.appendChild(fragment);
     document.body.appendChild(printRoot);
 
@@ -222,8 +298,11 @@ function App() {
         filters: [{ name: "HTML", extensions: ["html"] }],
       });
       if (savePath === null) return;
-      const sanitized = DOMPurify.sanitize(html);
-      const doc = buildHtmlDocument(sanitized, baseName, resolvedTheme);
+      const sanitized = DOMPurify.sanitize(html, { ALLOW_DATA_ATTR: true });
+      // Pre-render mermaid diagrams to inline SVG so the exported file is
+      // self-contained (no JS, no CDN) and renders offline.
+      const withDiagrams = await prerenderMermaid(sanitized, "export");
+      const doc = buildHtmlDocument(withDiagrams, baseName, resolvedTheme);
       await invoke("save_file", { path: savePath, content: doc });
     } catch (err) {
       console.error("Failed to export HTML:", err);
