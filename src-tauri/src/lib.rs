@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 
 use tauri::{Manager, Emitter};
 
@@ -10,7 +11,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
-            commands::save_file
+            commands::save_file,
+            config::app_data_dir
         ])
         .setup(|app| {
             let args: Vec<String> = std::env::args().collect();

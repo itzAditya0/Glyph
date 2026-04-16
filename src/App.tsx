@@ -12,6 +12,7 @@ import { useAutoSave } from "./hooks/useAutoSave";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { buildHtmlDocument } from "./utils/exportHtml";
 import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRender";
+import { useActiveTab } from "./state/tabs";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -21,91 +22,20 @@ type MermaidModule = {
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
-const DEFAULT_MARKDOWN = `# Welcome to Glyph
-
-A lightweight Markdown editor that gets out of your way.
-
-## Features
-
-- **Live preview** as you type
-- *Italic*, **bold**, and ~~strikethrough~~ support
-- GFM tables, task lists, and footnotes
-
-## Try it out
-
-Here's a list of things to try:
-
-- [ ] Type some markdown on the left
-- [ ] Watch it render on the right
-- [x] Enjoy the clean, distraction-free editing
-
-## Code Blocks
-
-\`\`\`python
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-print(greet("Glyph"))
-\`\`\`
-
-Inline code works too: \`const x = 42;\`
-
-## Tables
-
-| Feature       | Status |
-|---------------|--------|
-| Live Preview  | ✓      |
-| WYSIWYG Mode  | ✓      |
-| Dark Theme    | ✓      |
-| Find & Replace| ✓      |
-| Auto-save     | ✓      |
-
-## Math
-
-Inline: $E = mc^2$ and $\\alpha + \\beta = \\gamma$.
-
-Block:
-
-$$ \\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} $$
-
-## Diagram
-
-\`\`\`mermaid
-graph TD
-    A[Start] --> B{Decision}
-    B -->|yes| C[Do it]
-    B -->|no| D[Stop]
-\`\`\`
-
-## Blockquote
-
-> "Simplicity is the ultimate sophistication."
-> — Leonardo da Vinci
-
----
-
-This is a footnote reference[^1].
-
-[^1]: And here is the footnote content.
-`;
-
 function App() {
   const editorRef = useRef<EditorHandle>(null);
-  const [content, setContent] = useState(DEFAULT_MARKDOWN);
-  const [cursor, setCursor] = useState({ line: 1, col: 1 });
+  const { tab, setContent, setCursor } = useActiveTab();
+  const content = tab?.content ?? "";
+  const cursor = tab?.cursor ?? { line: 1, col: 1 };
+  const filePath = tab?.path ?? null;
+  const isDirty = tab?.isDirty ?? false;
+  const fileName = tab?.path ? tab.fileName : null;
+
   const [wysiwygMode, setWysiwygMode] = useState(false);
   const [zenMode, setZenMode] = useState(false);
   const html = useMarkdown(content);
   const { theme, resolvedTheme, toggleTheme } = useTheme();
-  const {
-    filePath,
-    isDirty,
-    openFile,
-    saveFile,
-    saveFileAs,
-    openFileFromPath,
-    setSavedContent,
-  } = useFile(content);
+  const { openFile, saveFile, saveFileAs, openFileFromPath } = useFile();
 
   const { recentFiles, addRecentFile, clearRecentFiles } = useRecentFiles();
   const { autoSaveEnabled, toggleAutoSave } = useAutoSave(
@@ -124,13 +54,6 @@ function App() {
     () => content.split(/\s+/).filter(Boolean).length,
     [content]
   );
-
-  const fileName = filePath ? filePath.replace(/\\/g, "/").split("/").pop() ?? null : null;
-
-  // Set initial savedContent to match default markdown
-  useEffect(() => {
-    setSavedContent(DEFAULT_MARKDOWN);
-  }, [setSavedContent]);
 
   // Dynamic window title (Tauri only)
   useEffect(() => {
@@ -202,10 +125,7 @@ function App() {
       const ok = window.confirm("You have unsaved changes. Open a new file anyway?");
       if (!ok) return;
     }
-    const fileContent = await openFile();
-    if (fileContent !== null) {
-      setContent(fileContent);
-    }
+    await openFile();
   }, [openFile, isDirty]);
 
   const handleOpenFromPath = useCallback(
@@ -214,8 +134,7 @@ function App() {
         const ok = window.confirm("You have unsaved changes. Open a new file anyway?");
         if (!ok) return;
       }
-      const fileContent = await openFileFromPath(path);
-      setContent(fileContent);
+      await openFileFromPath(path);
     },
     [openFileFromPath, isDirty]
   );
