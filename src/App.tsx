@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import DOMPurify from "dompurify";
 import Editor from "./components/Editor";
 import type { EditorHandle } from "./components/Editor";
 import { Preview } from "./components/Preview";
@@ -9,6 +10,7 @@ import { useFile } from "./hooks/useFile";
 import { useTheme } from "./hooks/useTheme";
 import { useAutoSave } from "./hooks/useAutoSave";
 import { useRecentFiles } from "./hooks/useRecentFiles";
+import { buildHtmlDocument } from "./utils/exportHtml";
 import styles from "./App.module.css";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -140,6 +142,86 @@ function App() {
     [openFileFromPath, isDirty]
   );
 
+  const [copiedNotice, setCopiedNotice] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+
+  const handleCopyAsRichText = useCallback(async () => {
+    if (!isTauri) return;
+    try {
+      const { writeHtml } = await import("@tauri-apps/plugin-clipboard-manager");
+      const sanitized = DOMPurify.sanitize(html);
+      await writeHtml(sanitized, content);
+      setCopiedNotice(true);
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+      copiedTimerRef.current = window.setTimeout(() => {
+        setCopiedNotice(false);
+        copiedTimerRef.current = null;
+      }, 2000);
+    } catch (err) {
+      console.error("Failed to copy as rich text:", err);
+    }
+  }, [html, content]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    // Clean any stale print root from a previous aborted print.
+    document.getElementById("glyph-print-root")?.remove();
+
+    const printRoot = document.createElement("div");
+    printRoot.id = "glyph-print-root";
+    printRoot.className = "glyph-preview";
+    const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true });
+    printRoot.appendChild(fragment);
+    document.body.appendChild(printRoot);
+
+    // Force light mode for printing so Shiki code blocks render with their
+    // light palette. Restored in afterprint.
+    const htmlEl = document.documentElement;
+    const wasDark = htmlEl.classList.contains("dark");
+    if (wasDark) htmlEl.classList.remove("dark");
+
+    document.body.classList.add("glyph-printing");
+
+    const cleanup = () => {
+      document.body.classList.remove("glyph-printing");
+      document.getElementById("glyph-print-root")?.remove();
+      if (wasDark) htmlEl.classList.add("dark");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }, [html]);
+
+  const handleExportHtml = useCallback(async () => {
+    if (!isTauri) return;
+    try {
+      const [{ save }, { invoke }] = await Promise.all([
+        import("@tauri-apps/plugin-dialog"),
+        import("@tauri-apps/api/core"),
+      ]);
+      const baseName = (fileName ?? "untitled").replace(/\.(md|markdown|mdown|mkd)$/i, "");
+      const savePath = await save({
+        defaultPath: `${baseName}.html`,
+        filters: [{ name: "HTML", extensions: ["html"] }],
+      });
+      if (savePath === null) return;
+      const sanitized = DOMPurify.sanitize(html);
+      const doc = buildHtmlDocument(sanitized, baseName, resolvedTheme);
+      await invoke("save_file", { path: savePath, content: doc });
+    } catch (err) {
+      console.error("Failed to export HTML:", err);
+    }
+  }, [fileName, html, resolvedTheme]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -159,13 +241,25 @@ function App() {
         e.preventDefault();
         setZenMode((z) => !z);
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "e" || e.key === "E")) {
+        e.preventDefault();
+        handleExportHtml().catch(() => {});
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        handlePrint();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        handleCopyAsRichText().catch(() => {});
+      }
       if (e.key === "Escape" && zenMode) {
         setZenMode(false);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [content, saveFile, saveFileAs, handleOpenFile, zenMode]);
+  }, [content, saveFile, saveFileAs, handleOpenFile, handleExportHtml, handlePrint, handleCopyAsRichText, zenMode]);
 
   // Drag and drop (Tauri only)
   useEffect(() => {
@@ -257,6 +351,9 @@ function App() {
         onOpenRecentFile={handleOpenFromPath}
         onClearRecentFiles={clearRecentFiles}
         onOpenSearch={() => editorRef.current?.openSearch()}
+        onExportHtml={handleExportHtml}
+        onPrint={handlePrint}
+        onCopyAsRichText={handleCopyAsRichText}
       />}
       {zenMode && (
         <div className={styles.zenHint}>Press Esc to exit zen mode</div>
@@ -289,6 +386,7 @@ function App() {
           isDirty={isDirty}
           autoSaveEnabled={autoSaveEnabled}
           onToggleAutoSave={toggleAutoSave}
+          copiedNotice={copiedNotice}
         />
       )}
     </div>

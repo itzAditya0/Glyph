@@ -1,0 +1,177 @@
+/*
+ * Print stylesheet for Glyph.
+ *
+ * Strategy: handlePrint (in App.tsx) injects a `<div id="glyph-print-root" class="glyph-preview">`
+ * into <body> containing the sanitized preview HTML and adds `glyph-printing` to <body>.
+ * These @media print rules hide the app's #root and show the print root only during printing.
+ *
+ * The app always removes `.dark` from <html> while printing (see handlePrint) so Shiki's
+ * dual-theme code blocks render with their light palette on paper.
+ */
+
+/* The print root is never visible on screen — only during @media print. */
+#glyph-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 1in;
+  }
+
+  /* Force light, paper-friendly colors regardless of app theme. */
+  html, body {
+    background: #ffffff !important;
+    color: #1f2328 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide everything except the print root when printing. */
+  body.glyph-printing > #root {
+    display: none !important;
+  }
+
+  body.glyph-printing > #glyph-print-root {
+    display: block !important;
+  }
+
+  /* Content styling — mirrors the in-app preview but tuned for paper. */
+  #glyph-print-root.glyph-preview {
+    max-width: 100%;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.55;
+    color: #1f2328;
+    background: #ffffff;
+  }
+
+  #glyph-print-root h1,
+  #glyph-print-root h2,
+  #glyph-print-root h3,
+  #glyph-print-root h4,
+  #glyph-print-root h5,
+  #glyph-print-root h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+    break-after: avoid;
+    page-break-after: avoid;
+    color: #1f2328;
+  }
+  #glyph-print-root h1:first-child,
+  #glyph-print-root h2:first-child { margin-top: 0; }
+  #glyph-print-root h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid #d1d5da; }
+  #glyph-print-root h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid #d1d5da; }
+  #glyph-print-root h3 { font-size: 1.25em; }
+  #glyph-print-root h4 { font-size: 1em; }
+  #glyph-print-root h5 { font-size: 0.875em; }
+  #glyph-print-root h6 { font-size: 0.85em; color: #656d76; }
+
+  #glyph-print-root p { margin: 0 0 0.75em; }
+
+  #glyph-print-root a {
+    color: #0550ae;
+    text-decoration: underline;
+  }
+
+  #glyph-print-root strong { font-weight: 600; }
+  #glyph-print-root em { font-style: italic; }
+  #glyph-print-root del { text-decoration: line-through; color: #656d76; }
+
+  #glyph-print-root blockquote {
+    margin: 0 0 0.75em;
+    padding: 0.4em 1em;
+    border-left: 3px solid #d1d5da;
+    color: #475058;
+    background: #fafbfc;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #glyph-print-root blockquote p:last-child { margin-bottom: 0; }
+
+  #glyph-print-root ul,
+  #glyph-print-root ol {
+    margin: 0 0 0.75em;
+    padding-left: 1.5em;
+  }
+  #glyph-print-root li { margin-bottom: 0.15em; }
+
+  #glyph-print-root ul.contains-task-list {
+    list-style: none;
+    padding-left: 1em;
+  }
+  #glyph-print-root li.task-list-item input[type="checkbox"] {
+    margin-right: 0.4em;
+    vertical-align: middle;
+  }
+
+  #glyph-print-root table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 0.75em;
+    border: 1px solid #d1d5da;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #glyph-print-root table th,
+  #glyph-print-root table td {
+    padding: 0.4em 0.75em;
+    border: 1px solid #d1d5da;
+    text-align: left;
+  }
+  #glyph-print-root table th {
+    background: #f6f8fa;
+    font-weight: 600;
+  }
+
+  #glyph-print-root code {
+    font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    padding: 0.12em 0.35em;
+    background: #f6f8fa;
+    border-radius: 3px;
+  }
+  #glyph-print-root pre {
+    margin: 0 0 0.75em;
+    padding: 0.75em;
+    background: #f6f8fa;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    overflow: visible;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #glyph-print-root pre code {
+    padding: 0;
+    background: none;
+    font-size: 0.85em;
+    line-height: 1.45;
+  }
+
+  #glyph-print-root hr {
+    height: 1px;
+    margin: 1em 0;
+    border: none;
+    background: #d1d5da;
+  }
+
+  #glyph-print-root img {
+    max-width: 100%;
+    height: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #glyph-print-root section.footnotes {
+    margin-top: 1.5em;
+    padding-top: 0.75em;
+    border-top: 1px solid #d1d5da;
+    font-size: 0.9em;
+    color: #475058;
+  }
+}

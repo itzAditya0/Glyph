@@ -7,6 +7,7 @@ interface StatusBarProps {
   isDirty: boolean;
   autoSaveEnabled: boolean;
   onToggleAutoSave: () => void;
+  copiedNotice?: boolean;
 }
 
 export default function StatusBar({
@@ -16,6 +17,7 @@ export default function StatusBar({
   isDirty,
   autoSaveEnabled,
   onToggleAutoSave,
+  copiedNotice = false,
 }: StatusBarProps) {
   return (
     <div className={styles.statusBar}>
@@ -38,6 +40,14 @@ export default function StatusBar({
       >
         Auto-save: {autoSaveEnabled ? "On" : "Off"}
       </button>
+      {copiedNotice && (
+        <>
+          <span className={styles.separator} />
+          <span className={styles.saved} role="status" aria-live="polite">
+            {"Copied \u2713"}
+          </span>
+        </>
+      )}
     </div>
   );
 }

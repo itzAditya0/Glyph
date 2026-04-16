@@ -20,6 +20,9 @@ interface ToolbarProps {
   onOpenRecentFile: (path: string) => void;
   onClearRecentFiles: () => void;
   onOpenSearch: () => void;
+  onExportHtml: () => void;
+  onPrint: () => void;
+  onCopyAsRichText: () => void;
 }
 
 function SunIcon() {
@@ -120,6 +123,62 @@ function SearchIcon() {
   );
 }
 
+function CopyIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="5" y="5" width="9" height="9" rx="1" />
+      <path d="M11 5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2" />
+    </svg>
+  );
+}
+
+function PrintIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="4 5 4 2 12 2 12 5" />
+      <rect x="2" y="5" width="12" height="7" rx="1" />
+      <rect x="4" y="9" width="8" height="5" rx="0.5" />
+    </svg>
+  );
+}
+
+function ExportIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 2v8" />
+      <polyline points="5 5 8 2 11 5" />
+      <path d="M2.5 10v2.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V10" />
+    </svg>
+  );
+}
+
 function ClockIcon() {
   return (
     <svg
@@ -150,6 +209,9 @@ export default function Toolbar({
   onOpenRecentFile,
   onClearRecentFiles,
   onOpenSearch,
+  onExportHtml,
+  onPrint,
+  onCopyAsRichText,
 }: ToolbarProps) {
   const isMac = navigator.platform.toUpperCase().includes("MAC");
   const [showRecent, setShowRecent] = useState(false);
@@ -201,6 +263,30 @@ export default function Toolbar({
           title={isMac ? "Find & Replace (⌘F)" : "Find & Replace (Ctrl+F)"}
         >
           <SearchIcon />
+        </button>
+        <button
+          className={styles.themeToggle}
+          onClick={onExportHtml}
+          aria-label="Export as HTML"
+          title={isMac ? "Export as HTML (⌘⇧E)" : "Export as HTML (Ctrl+Shift+E)"}
+        >
+          <ExportIcon />
+        </button>
+        <button
+          className={styles.themeToggle}
+          onClick={onPrint}
+          aria-label="Print / Save as PDF"
+          title={isMac ? "Print / Save as PDF (⌘P)" : "Print / Save as PDF (Ctrl+P)"}
+        >
+          <PrintIcon />
+        </button>
+        <button
+          className={styles.themeToggle}
+          onClick={onCopyAsRichText}
+          aria-label="Copy as rich text"
+          title={isMac ? "Copy as rich text (⌘⇧C)" : "Copy as rich text (Ctrl+Shift+C)"}
+        >
+          <CopyIcon />
         </button>
         <button
           className={`${styles.themeToggle} ${wysiwygMode ? styles.active : ""}`}
