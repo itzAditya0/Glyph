@@ -5,10 +5,7 @@ A lightweight, fast Markdown editor built with [Tauri v2](https://v2.tauri.app),
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-## Screenshot
-
-<!-- TODO: add docs/screenshot.png and update this link once captured -->
-_Screenshot coming soon — drop `docs/screenshot.png` and replace this section._
+![Glyph editor in dark mode, split between markdown source and rendered preview](docs/screenshot.png)
 
 ## Features
 
