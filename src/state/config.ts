@@ -64,6 +64,8 @@ export async function loadConfig(): Promise<GlyphConfig> {
     const path = await resolveConfigPath();
     const raw = await invoke<string>("read_file", { path });
     const parsed = JSON.parse(raw) as Partial<GlyphConfig>;
+    // TODO: once we ship a `schemaVersion: 2`, branch here on
+    // `parsed.schemaVersion` to migrate older configs before merging.
     return merge(parsed);
   } catch {
     // Missing or malformed config — seed defaults on disk and return them.
@@ -77,10 +79,21 @@ export async function loadConfig(): Promise<GlyphConfig> {
   }
 }
 
+// Serialize saves so concurrent patches don't clobber each other. Each
+// `saveConfig` call awaits the previous one, reads current state fresh,
+// then merges and writes. Without this, two quick toggles of different
+// keys would both read the same "current" and one patch would lose.
+let saveQueue: Promise<GlyphConfig | void> = Promise.resolve();
+
 export async function saveConfig(patch: Partial<GlyphConfig>): Promise<GlyphConfig> {
   if (!isTauri) return merge(patch);
-  const current = await loadConfig();
-  const next = merge({ ...current, ...patch });
-  await writeConfigToDisk(next);
-  return next;
+  const run = saveQueue.then(async () => {
+    const current = await loadConfig();
+    const next = merge({ ...current, ...patch });
+    await writeConfigToDisk(next);
+    return next;
+  });
+  // Keep the queue alive even if this write rejects.
+  saveQueue = run.catch(() => undefined);
+  return run;
 }

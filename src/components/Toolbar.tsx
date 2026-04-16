@@ -23,6 +23,7 @@ interface ToolbarProps {
   onExportHtml: () => void;
   onPrint: () => void;
   onCopyAsRichText: () => void;
+  onOpenSettings: () => void;
 }
 
 function SunIcon() {
@@ -123,6 +124,24 @@ function SearchIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="8" r="2.5" />
+      <path d="M13.6 9.6a1 1 0 0 0 .2 1.1l.05.05a1.25 1.25 0 1 1-1.77 1.77l-.05-.05a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.92V13.5a1.25 1.25 0 1 1-2.5 0v-.05a1 1 0 0 0-.65-.92 1 1 0 0 0-1.1.2l-.05.05a1.25 1.25 0 1 1-1.77-1.77l.05-.05a1 1 0 0 0 .2-1.1 1 1 0 0 0-.92-.6H2.5a1.25 1.25 0 1 1 0-2.5h.05a1 1 0 0 0 .92-.65 1 1 0 0 0-.2-1.1l-.05-.05a1.25 1.25 0 1 1 1.77-1.77l.05.05a1 1 0 0 0 1.1.2h.04a1 1 0 0 0 .6-.92V2.5a1.25 1.25 0 1 1 2.5 0v.05a1 1 0 0 0 .6.92 1 1 0 0 0 1.1-.2l.05-.05a1.25 1.25 0 1 1 1.77 1.77l-.05.05a1 1 0 0 0-.2 1.1v.04a1 1 0 0 0 .92.6H13.5a1.25 1.25 0 1 1 0 2.5h-.05a1 1 0 0 0-.92.6z" />
+    </svg>
+  );
+}
+
 function CopyIcon() {
   return (
     <svg
@@ -212,6 +231,7 @@ export default function Toolbar({
   onExportHtml,
   onPrint,
   onCopyAsRichText,
+  onOpenSettings,
 }: ToolbarProps) {
   const isMac = navigator.platform.toUpperCase().includes("MAC");
   const [showRecent, setShowRecent] = useState(false);
@@ -304,6 +324,14 @@ export default function Toolbar({
           title="Toggle theme"
         >
           {resolvedTheme === "light" ? <MoonIcon /> : <SunIcon />}
+        </button>
+        <button
+          className={styles.themeToggle}
+          onClick={onOpenSettings}
+          aria-label="Settings"
+          title={isMac ? "Settings (⌘,)" : "Settings (Ctrl+,)"}
+        >
+          <SettingsIcon />
         </button>
       </div>
     </div>

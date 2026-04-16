@@ -13,6 +13,8 @@ import { useRecentFiles } from "./hooks/useRecentFiles";
 import { buildHtmlDocument } from "./utils/exportHtml";
 import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRender";
 import { useActiveTab } from "./state/tabs";
+import { loadConfig, saveConfig } from "./state/config";
+import Settings from "./components/Settings";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -33,6 +35,36 @@ function App() {
 
   const [wysiwygMode, setWysiwygMode] = useState(false);
   const [zenMode, setZenMode] = useState(false);
+  const [vimMode, setVimMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsHydratedRef = useRef(false);
+
+  // Hydrate user settings on mount. Missing/corrupt config falls back to defaults.
+  useEffect(() => {
+    let cancelled = false;
+    loadConfig().then((cfg) => {
+      if (!cancelled) {
+        setVimMode(cfg.vimMode);
+        settingsHydratedRef.current = true;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist vimMode whenever it changes — but not on the initial hydrate,
+  // or we'd overwrite disk with the default before `loadConfig` returns.
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+    saveConfig({ vimMode }).catch((err) => {
+      console.error("Failed to persist vimMode setting:", err);
+    });
+  }, [vimMode]);
+
+  const handleToggleVimMode = useCallback(() => {
+    setVimMode((current) => !current);
+  }, []);
   const html = useMarkdown(content);
   const { theme, resolvedTheme, toggleTheme } = useTheme();
   const { openFile, saveFile, saveFileAs, openFileFromPath } = useFile();
@@ -259,6 +291,10 @@ function App() {
         e.preventDefault();
         handleCopyAsRichText().catch(() => {});
       }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen((open) => !open);
+      }
       if (e.key === "Escape" && zenMode) {
         setZenMode(false);
       }
@@ -360,6 +396,7 @@ function App() {
         onExportHtml={handleExportHtml}
         onPrint={handlePrint}
         onCopyAsRichText={handleCopyAsRichText}
+        onOpenSettings={() => setSettingsOpen(true)}
       />}
       {zenMode && (
         <div className={styles.zenHint}>Press Esc to exit zen mode</div>
@@ -373,6 +410,7 @@ function App() {
             onCursorChange={setCursor}
             resolvedTheme={resolvedTheme}
             wysiwygMode={wysiwygMode}
+            vimMode={vimMode}
           />
         </div>
         {!wysiwygMode && (
@@ -395,6 +433,12 @@ function App() {
           copiedNotice={copiedNotice}
         />
       )}
+      <Settings
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        vimMode={vimMode}
+        onToggleVimMode={handleToggleVimMode}
+      />
     </div>
   );
 }

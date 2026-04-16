@@ -1,5 +1,5 @@
 import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -10,6 +10,18 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { wysiwyg } from "../extensions/wysiwyg";
 import { imagePreview } from "../extensions/imagePreview";
 import styles from "./Editor.module.css";
+
+// Vim is ~130 KB; lazy-loaded on first enable so users who never toggle it
+// pay nothing. Module-scoped cache means subsequent toggles reuse the import.
+let vimExtensionPromise: Promise<Extension> | null = null;
+function loadVimExtension(): Promise<Extension> {
+  if (vimExtensionPromise === null) {
+    vimExtensionPromise = import("@replit/codemirror-vim").then((mod) =>
+      mod.vim(),
+    );
+  }
+  return vimExtensionPromise;
+}
 
 interface CursorPosition {
   line: number;
@@ -22,11 +34,15 @@ interface EditorProps {
   onCursorChange?: (pos: CursorPosition) => void;
   resolvedTheme?: "light" | "dark";
   wysiwygMode?: boolean;
+  vimMode?: boolean;
 }
 
 const themeCompartment = new Compartment();
 const wysiwygCompartment = new Compartment();
 const imagePreviewCompartment = new Compartment();
+// Vim wraps its own keymap + modal cursor; placed BEFORE the default keymaps
+// so normal-mode `hjkl` etc. win over CodeMirror's defaults.
+const vimCompartment = new Compartment();
 
 function wrapSelection(view: EditorView, marker: string): boolean {
   const { from, to } = view.state.selection.main;
@@ -58,6 +74,7 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
   onCursorChange,
   resolvedTheme,
   wysiwygMode = false,
+  vimMode = false,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView>(null);
@@ -104,6 +121,11 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
     const state = EditorState.create({
       doc: value,
       extensions: [
+        // Vim is first so its keymap takes priority over the default keymaps
+        // registered below. Populated lazily in the vimMode effect; the
+        // initial extension slot is empty even when `vimMode` is true so
+        // that the editor mount doesn't block on the dynamic import.
+        vimCompartment.of([]),
         markdown({ codeLanguages: languages, extensions: GFM }),
         history(),
         markdownKeybindings,
@@ -184,6 +206,27 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
       ],
     });
   }, [wysiwygMode]);
+
+  // Handle Vim mode changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    let cancelled = false;
+    if (vimMode) {
+      loadVimExtension().then((extension) => {
+        if (cancelled) return;
+        const v = viewRef.current;
+        if (!v) return;
+        v.dispatch({ effects: vimCompartment.reconfigure(extension) });
+      });
+    } else {
+      view.dispatch({ effects: vimCompartment.reconfigure([]) });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [vimMode]);
 
   return <div ref={containerRef} className={styles.editor} />;
 });
