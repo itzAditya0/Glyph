@@ -54,6 +54,14 @@ Inline code works too: \`const x = 42;\`
 | Find & Replace| ✓      |
 | Auto-save     | ✓      |
 
+## Math
+
+Inline: $E = mc^2$ and $\\alpha + \\beta = \\gamma$.
+
+Block:
+
+$$ \\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2} $$
+
 ## Blockquote
 
 > "Simplicity is the ultimate sophistication."

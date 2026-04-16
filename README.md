@@ -10,6 +10,7 @@ A lightweight, fast Markdown editor built with [Tauri v2](https://v2.tauri.app),
 - **Split-pane editing** — Write markdown on the left, see the rendered preview on the right
 - **WYSIWYG inline mode** — Typora-style editing where markdown syntax is visually rendered in-place with cursor-reveal
 - **Syntax highlighting** — Powered by Shiki with support for 9+ languages
+- **LaTeX math** — Inline `$…$` and block `$$…$$` rendered via KaTeX
 - **Light & dark themes** — System-aware with manual toggle (system / light / dark)
 - **GFM support** — Tables, task lists, footnotes, strikethrough
 - **Keyboard shortcuts** — `Cmd+B` bold, `Cmd+I` italic, `Cmd+K` link, `Cmd+S` save, `Cmd+O` open

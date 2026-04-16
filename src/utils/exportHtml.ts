@@ -9,7 +9,15 @@
  *
  * Shiki code blocks already carry inline `style=` attributes on their
  * spans/pre, so no Shiki theme CSS needs to be embedded here.
+ *
+ * KaTeX math: we link the KaTeX stylesheet from jsDelivr (pinned version)
+ * rather than inlining it, because the KaTeX CSS references woff2 fonts
+ * via relative URLs — inlining the CSS without also bundling fonts as
+ * base64 would leave math unstyled. The exported file needs internet to
+ * render math; plain text/markdown still works offline.
  */
+
+const KATEX_CDN_VERSION = "0.16.22";
 
 const EXPORT_STYLES = `
 :root {
@@ -226,6 +234,7 @@ export function buildHtmlDocument(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="Glyph">
 <title>${safeTitle}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${KATEX_CDN_VERSION}/dist/katex.min.css" crossorigin="anonymous">
 <style>
 ${EXPORT_STYLES}
 </style>

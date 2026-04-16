@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
+import katex from "@vscode/markdown-it-katex";
 import { createHighlighter } from "shiki";
 import { fromHighlighter } from "@shikijs/markdown-it";
 
@@ -12,7 +13,8 @@ const md = new MarkdownIt({
   breaks: true,
 })
   .use(taskLists, { enabled: true })
-  .use(footnote);
+  .use(footnote)
+  .use(katex, { output: "html", throwOnError: false });
 
 let shikiInitialized = false;
 let shikiInitPromise: Promise<void> | null = null;
