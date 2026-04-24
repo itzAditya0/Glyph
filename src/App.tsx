@@ -15,6 +15,7 @@ import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRende
 import { useActiveTab, useTabs } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
 import { loadSession, saveSession } from "./state/session";
+import { runCliExport } from "./state/cliExport";
 import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
 import {
   activatePlugin,
@@ -578,6 +579,25 @@ function App() {
       cleanup?.();
     };
   }, [handleOpenFromPath]);
+
+  // CLI export — `glyph export <file> --html` fires this event. The handler
+  // runs the full GUI render pipeline, writes to disk, and quits the process.
+  useEffect(() => {
+    if (!isTauri) return;
+    let cleanup: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<{ input: string; output: string }>("cli-export", (event) => {
+        runCliExport(event.payload).catch((err) => {
+          console.error("[glyph cli] export unhandled rejection:", err);
+        });
+      }).then((fn) => {
+        cleanup = fn;
+      });
+    });
+    return () => {
+      cleanup?.();
+    };
+  }, []);
 
   // Confirm on close (Tauri only)
   useEffect(() => {

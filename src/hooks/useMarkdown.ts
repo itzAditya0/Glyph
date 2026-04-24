@@ -94,6 +94,15 @@ installMermaidFence(md);
 let shikiInitialized = false;
 let shikiInitPromise: Promise<void> | null = null;
 
+/**
+ * Await the Shiki highlighter being fully registered into `md`.
+ * Exposed so non-React code paths (the CLI export handler) can ensure
+ * fences are highlighted before the first render.
+ */
+export function ensureShikiReady(): Promise<void> {
+  return initShiki();
+}
+
 function initShiki(): Promise<void> {
   if (shikiInitialized) return Promise.resolve();
   if (shikiInitPromise) return shikiInitPromise;
