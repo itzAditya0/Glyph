@@ -28,7 +28,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
             commands::save_file,
-            config::app_data_dir
+            config::app_data_dir,
+            config::list_themes
         ])
         .setup(|app| {
             // First-instance argv: emit open-file for the first file argument so

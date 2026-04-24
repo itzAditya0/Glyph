@@ -219,14 +219,20 @@ function escapeHtml(input: string): string {
 /**
  * Wraps sanitized inner HTML in a standalone HTML document.
  * The resulting string can be written directly to disk and opened in any browser.
+ *
+ * Pass `userThemeCss` to inline a user-supplied preview theme — rules there
+ * typically target `.glyph-preview-root`, so the article element also
+ * carries that class alongside the default `.glyph-preview` class.
  */
 export function buildHtmlDocument(
   innerHtml: string,
   title: string,
   theme: "light" | "dark",
+  userThemeCss: string | null = null,
 ): string {
   const htmlClass = theme === "dark" ? "dark" : "";
   const safeTitle = escapeHtml(title);
+  const userThemeBlock = userThemeCss ? `<style id="glyph-user-theme">\n${userThemeCss}\n</style>\n` : "";
   return `<!DOCTYPE html>
 <html lang="en"${htmlClass ? ` class="${htmlClass}"` : ""}>
 <head>
@@ -238,9 +244,9 @@ export function buildHtmlDocument(
 <style>
 ${EXPORT_STYLES}
 </style>
-</head>
+${userThemeBlock}</head>
 <body>
-<article class="glyph-preview">
+<article class="glyph-preview glyph-preview-root">
 ${innerHtml}
 </article>
 </body>

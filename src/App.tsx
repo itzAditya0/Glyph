@@ -14,6 +14,7 @@ import { buildHtmlDocument } from "./utils/exportHtml";
 import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRender";
 import { useActiveTab } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
+import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
 import Settings from "./components/Settings";
 import styles from "./App.module.css";
 
@@ -37,16 +38,21 @@ function App() {
   const [zenMode, setZenMode] = useState(false);
   const [vimMode, setVimMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewThemes, setPreviewThemes] = useState<PreviewTheme[]>([]);
+  const [previewTheme, setPreviewTheme] = useState<string | null>(null);
   const settingsHydratedRef = useRef(false);
 
-  // Hydrate user settings on mount. Missing/corrupt config falls back to defaults.
+  // Hydrate user settings on mount. Missing/corrupt config falls back to
+  // defaults. Themes are discovered in parallel; their list is cached in
+  // state for the lifetime of the session (re-scans require a restart).
   useEffect(() => {
     let cancelled = false;
-    loadConfig().then((cfg) => {
-      if (!cancelled) {
-        setVimMode(cfg.vimMode);
-        settingsHydratedRef.current = true;
-      }
+    Promise.all([loadConfig(), listThemes()]).then(([cfg, themes]) => {
+      if (cancelled) return;
+      setVimMode(cfg.vimMode);
+      setPreviewThemes(themes);
+      setPreviewTheme(cfg.previewTheme);
+      settingsHydratedRef.current = true;
     });
     return () => {
       cancelled = true;
@@ -62,8 +68,23 @@ function App() {
     });
   }, [vimMode]);
 
+  // Apply the active preview theme and persist its name. `applyTheme`
+  // swaps the text of a single managed `<style>` tag in document.head so
+  // users never see an unstyled flash between selections.
+  useEffect(() => {
+    applyTheme(findTheme(previewThemes, previewTheme));
+    if (!settingsHydratedRef.current) return;
+    saveConfig({ previewTheme }).catch((err) => {
+      console.error("Failed to persist previewTheme setting:", err);
+    });
+  }, [previewTheme, previewThemes]);
+
   const handleToggleVimMode = useCallback(() => {
     setVimMode((current) => !current);
+  }, []);
+
+  const handlePreviewThemeChange = useCallback((name: string | null) => {
+    setPreviewTheme(name);
   }, []);
   const html = useMarkdown(content);
   const { theme, resolvedTheme, toggleTheme } = useTheme();
@@ -253,12 +274,20 @@ function App() {
       // Pre-render mermaid diagrams to inline SVG so the exported file is
       // self-contained (no JS, no CDN) and renders offline.
       const withDiagrams = await prerenderMermaid(sanitized, "export");
-      const doc = buildHtmlDocument(withDiagrams, baseName, resolvedTheme);
+      // Inline the active user theme (if any) so exported files match
+      // what the author saw in the preview pane.
+      const activeTheme = findTheme(previewThemes, previewTheme);
+      const doc = buildHtmlDocument(
+        withDiagrams,
+        baseName,
+        resolvedTheme,
+        activeTheme?.css ?? null,
+      );
       await invoke("save_file", { path: savePath, content: doc });
     } catch (err) {
       console.error("Failed to export HTML:", err);
     }
-  }, [fileName, html, resolvedTheme]);
+  }, [fileName, html, resolvedTheme, previewThemes, previewTheme]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -438,6 +467,9 @@ function App() {
         onClose={() => setSettingsOpen(false)}
         vimMode={vimMode}
         onToggleVimMode={handleToggleVimMode}
+        themes={previewThemes}
+        previewTheme={previewTheme}
+        onPreviewThemeChange={handlePreviewThemeChange}
       />
     </div>
   );

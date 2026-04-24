@@ -1,15 +1,19 @@
 /**
  * Glyph settings modal.
  *
- * Stage 2 introduces this shell with a single Editor > Vim mode toggle
- * so it also serves as the UI pattern for later stages that add rows
- * (theme picker in Stage 4, sidebar width in Stage 5, plugin enable
- * list in Stage 7). Settings apply live — no "Apply" button, no form
- * submit — and each change is persisted to `<app-data>/Glyph/config.json`
- * via `saveConfig`.
+ * Introduced in Stage 2 for the Vim toggle; now also hosts Stage 4's
+ * Appearance section for custom preview themes and is shaped to accept
+ * the Stage 5 sidebar-width slider and Stage 7 plugin list.
+ *
+ * `SettingRow` is a layout-only primitive: caller provides the input via
+ * the `control` prop so checkboxes, selects, sliders, and future custom
+ * controls all share the same row chrome and accessibility wiring.
+ * Settings apply live — no "Apply" button, no form submit — and each
+ * change is persisted to `<app-data>/Glyph/config.json` via `saveConfig`.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import type { PreviewTheme } from "../state/themes";
 import styles from "./Settings.module.css";
 
 interface SettingsProps {
@@ -17,6 +21,9 @@ interface SettingsProps {
   onClose: () => void;
   vimMode: boolean;
   onToggleVimMode: () => void;
+  themes: PreviewTheme[];
+  previewTheme: string | null;
+  onPreviewThemeChange: (name: string | null) => void;
 }
 
 export default function Settings({
@@ -24,6 +31,9 @@ export default function Settings({
   onClose,
   vimMode,
   onToggleVimMode,
+  themes,
+  previewTheme,
+  onPreviewThemeChange,
 }: SettingsProps) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   // Remember the element that had focus when the modal opened so we can
@@ -65,6 +75,14 @@ export default function Settings({
     [],
   );
 
+  const handleThemeSelect = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      onPreviewThemeChange(value === "" ? null : value);
+    },
+    [onPreviewThemeChange],
+  );
+
   if (!open) return null;
 
   return (
@@ -103,8 +121,44 @@ export default function Settings({
               id="glyph-vim-mode"
               label="Vim mode"
               description="Enable modal Vim keybindings in the editor."
-              checked={vimMode}
-              onChange={onToggleVimMode}
+              control={
+                <input
+                  id="glyph-vim-mode"
+                  type="checkbox"
+                  checked={vimMode}
+                  onChange={onToggleVimMode}
+                  className={styles.toggle}
+                />
+              }
+            />
+          </section>
+
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>Appearance</h3>
+            <SettingRow
+              id="glyph-preview-theme"
+              label="Preview theme"
+              description={
+                themes.length === 0
+                  ? "Drop .css files into the Glyph/themes folder in your app-data directory to add themes."
+                  : "Choose a user-supplied stylesheet for the preview pane."
+              }
+              control={
+                <select
+                  id="glyph-preview-theme"
+                  className={styles.select}
+                  value={previewTheme ?? ""}
+                  onChange={handleThemeSelect}
+                  disabled={themes.length === 0}
+                >
+                  <option value="">Default</option>
+                  {themes.map((theme) => (
+                    <option key={theme.name} value={theme.name}>
+                      {theme.name}
+                    </option>
+                  ))}
+                </select>
+              }
             />
           </section>
         </div>
@@ -114,14 +168,14 @@ export default function Settings({
 }
 
 interface SettingRowProps {
+  /** Label `htmlFor` target — should match the control's `id`. */
   id: string;
   label: string;
   description?: string;
-  checked: boolean;
-  onChange: () => void;
+  control: ReactNode;
 }
 
-function SettingRow({ id, label, description, checked, onChange }: SettingRowProps) {
+function SettingRow({ id, label, description, control }: SettingRowProps) {
   return (
     <div className={styles.row}>
       <div className={styles.rowText}>
@@ -130,13 +184,7 @@ function SettingRow({ id, label, description, checked, onChange }: SettingRowPro
         </label>
         {description && <p className={styles.rowDescription}>{description}</p>}
       </div>
-      <input
-        id={id}
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        className={styles.toggle}
-      />
+      {control}
     </div>
   );
 }

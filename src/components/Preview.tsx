@@ -14,9 +14,14 @@ export function Preview({ html }: PreviewProps) {
   const sanitized = DOMPurify.sanitize(html, { ALLOW_DATA_ATTR: true });
   const isEmpty = sanitized.trim() === "";
 
+  // `glyph-preview-root` is the stable, non-CSS-Modules class that user
+  // themes under `<app-data>/Glyph/themes/*.css` target. Keep the name
+  // stable across releases.
+  const rootClassName = `${styles.preview} glyph-preview-root`;
+
   if (isEmpty) {
     return (
-      <div className={styles.preview}>
+      <div className={rootClassName}>
         <div className={styles.empty}>
           Start typing or open a file ({isMac ? "⌘" : "Ctrl+"}O)
         </div>
@@ -26,7 +31,7 @@ export function Preview({ html }: PreviewProps) {
 
   return (
     <div
-      className={styles.preview}
+      className={rootClassName}
       dangerouslySetInnerHTML={{ __html: sanitized }}
     />
   );
