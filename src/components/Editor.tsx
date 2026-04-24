@@ -66,6 +66,8 @@ function wrapSelection(view: EditorView, marker: string): boolean {
 
 export interface EditorHandle {
   openSearch: () => void;
+  /** Scroll the editor so `line` (0-based) is at the top of the viewport. */
+  scrollToLine: (line: number) => void;
 }
 
 const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
@@ -88,6 +90,17 @@ const Editor = forwardRef<EditorHandle, EditorProps>(function Editor({
   useImperativeHandle(ref, () => ({
     openSearch: () => {
       if (viewRef.current) openSearchPanel(viewRef.current);
+    },
+    scrollToLine: (line: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const target = Math.max(0, Math.min(line, view.state.doc.lines - 1));
+      const pos = view.state.doc.line(target + 1).from;
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 16 }),
+      });
+      view.focus();
     },
   }));
 

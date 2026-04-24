@@ -3,10 +3,15 @@ import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import katex from "@vscode/markdown-it-katex";
+import anchor from "markdown-it-anchor";
 import { createHighlighter } from "shiki";
 import { fromHighlighter } from "@shikijs/markdown-it";
 
-const md = new MarkdownIt({
+/**
+ * Shared markdown-it instance. Exported so hooks like `useHeadings` can
+ * reuse the same parsed-token stream without a second render.
+ */
+export const md = new MarkdownIt({
   html: false,
   linkify: true,
   typographer: true,
@@ -14,7 +19,12 @@ const md = new MarkdownIt({
 })
   .use(taskLists, { enabled: true })
   .use(footnote)
-  .use(katex, { output: "html", throwOnError: false });
+  .use(katex, { output: "html", throwOnError: false })
+  .use(anchor, {
+    // `markdown-it-anchor`'s default slug function matches GitHub-flavored
+    // output and is kept in sync with the `slugify` in `useHeadings.ts`.
+    tabIndex: false,
+  });
 
 /**
  * Intercept ```mermaid fences and emit a placeholder that a post-mount effect

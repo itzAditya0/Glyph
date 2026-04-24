@@ -15,7 +15,9 @@ import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRende
 import { useActiveTab } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
 import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
+import { useHeadings, type HeadingEntry } from "./hooks/useHeadings";
 import Settings from "./components/Settings";
+import Outline from "./components/Outline";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -40,7 +42,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [previewThemes, setPreviewThemes] = useState<PreviewTheme[]>([]);
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const settingsHydratedRef = useRef(false);
+  const headings = useHeadings(content);
 
   // Hydrate user settings on mount. Missing/corrupt config falls back to
   // defaults. Themes are discovered in parallel; their list is cached in
@@ -52,6 +56,7 @@ function App() {
       setVimMode(cfg.vimMode);
       setPreviewThemes(themes);
       setPreviewTheme(cfg.previewTheme);
+      setSidebarOpen(cfg.sidebarOpen);
       settingsHydratedRef.current = true;
     });
     return () => {
@@ -85,6 +90,24 @@ function App() {
 
   const handlePreviewThemeChange = useCallback((name: string | null) => {
     setPreviewTheme(name);
+  }, []);
+
+  // Persist sidebarOpen across launches; skip the initial hydrate.
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+    saveConfig({ sidebarOpen }).catch((err) => {
+      console.error("Failed to persist sidebarOpen setting:", err);
+    });
+  }, [sidebarOpen]);
+
+  const handleHeadingClick = useCallback((heading: HeadingEntry) => {
+    // Drive both panes: editor jumps to the source line, preview scrolls
+    // to the anchor `markdown-it-anchor` attached to the rendered heading.
+    editorRef.current?.scrollToLine(heading.line);
+    const target = document.querySelector<HTMLElement>(
+      `.glyph-preview-root #${CSS.escape(heading.slug)}`,
+    );
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, []);
   const html = useMarkdown(content);
   const { theme, resolvedTheme, toggleTheme } = useTheme();
@@ -324,6 +347,10 @@ function App() {
         e.preventDefault();
         setSettingsOpen((open) => !open);
       }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "\\") {
+        e.preventDefault();
+        setSidebarOpen((open) => !open);
+      }
       if (e.key === "Escape" && zenMode) {
         setZenMode(false);
       }
@@ -431,6 +458,11 @@ function App() {
         <div className={styles.zenHint}>Press Esc to exit zen mode</div>
       )}
       <div className={styles.panes}>
+        {!zenMode && sidebarOpen && (
+          <div className={styles.sidebarPane}>
+            <Outline headings={headings} onHeadingClick={handleHeadingClick} />
+          </div>
+        )}
         <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
           <Editor
             ref={editorRef}

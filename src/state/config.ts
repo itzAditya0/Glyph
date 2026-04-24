@@ -20,6 +20,8 @@ export interface GlyphConfig {
   previewTheme: string | null;
   /** TOC sidebar width in px. Stage 5. */
   sidebarWidth: number;
+  /** TOC sidebar open/closed state — persisted across launches. Stage 5. */
+  sidebarOpen: boolean;
   /** Vim editor mode flag. Stage 2. */
   vimMode: boolean;
 }
@@ -29,6 +31,7 @@ export const DEFAULT_CONFIG: GlyphConfig = {
   pluginsEnabled: {},
   previewTheme: null,
   sidebarWidth: 220,
+  sidebarOpen: true,
   vimMode: false,
 };
 

@@ -11,6 +11,13 @@
   overflow: hidden;
 }
 
+.sidebarPane {
+  flex: 0 0 220px;
+  min-width: 160px;
+  max-width: 360px;
+  overflow: hidden;
+}
+
 .editorPane {
   flex: 1;
   overflow: hidden;
