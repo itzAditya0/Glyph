@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod plugins;
 
 use tauri::{Emitter, Manager};
 
@@ -29,7 +30,8 @@ pub fn run() {
             commands::read_file,
             commands::save_file,
             config::app_data_dir,
-            config::list_themes
+            config::list_themes,
+            plugins::list_plugin_manifests
         ])
         .setup(|app| {
             // First-instance argv: emit open-file for the first file argument so

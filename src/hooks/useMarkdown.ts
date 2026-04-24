@@ -6,6 +6,11 @@ import katex from "@vscode/markdown-it-katex";
 import anchor from "markdown-it-anchor";
 import { createHighlighter } from "shiki";
 import { fromHighlighter } from "@shikijs/markdown-it";
+import {
+  getMarkdownRenderer,
+  getRendererRegistryVersion,
+  onRendererRegistryChange,
+} from "../state/plugins";
 
 /**
  * Shared markdown-it instance. Exported so hooks like `useHeadings` can
@@ -40,6 +45,25 @@ function installMermaidFence(mdInstance: MarkdownIt) {
   mdInstance.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const info = (token.info || "").trim().toLowerCase();
+
+    // Plugins get first dibs on fence languages. A plugin-registered
+    // renderer receives the raw source and returns HTML that replaces the
+    // fence. The host sanitizes the rendered doc in `Preview` before the
+    // DOM reaches the screen, so plugins can emit any tags DOMPurify's
+    // default config keeps.
+    if (info) {
+      const pluginRenderer = getMarkdownRenderer(info);
+      if (pluginRenderer) {
+        try {
+          return pluginRenderer(token.content);
+        } catch (err) {
+          console.error(`[glyph plugins] renderer for \`${info}\` threw:`, err);
+          // Fall through to default rendering on failure so one bad plugin
+          // doesn't break the whole document.
+        }
+      }
+    }
+
     if (info === "mermaid") {
       // Mermaid source contains `-->` (flowchart arrows), which DOMPurify
       // treats as an HTML-comment-terminator and strips from data-attrs.
@@ -49,9 +73,19 @@ function installMermaidFence(mdInstance: MarkdownIt) {
       const escaped = mdInstance.utils.escapeHtml(token.content);
       return `<pre class="mermaid" data-source="${encoded}">${escaped}</pre>`;
     }
-    return downstream
-      ? downstream(tokens, idx, options, env, self)
-      : self.renderToken(tokens, idx, options);
+    // Unknown languages (no plugin, not a Shiki-registered grammar) make
+    // `@shikijs/markdown-it` throw rather than fall back to plain `<pre>`.
+    // Catch here so a single unrecognized fence doesn't break the whole
+    // document render.
+    try {
+      return downstream
+        ? downstream(tokens, idx, options, env, self)
+        : self.renderToken(tokens, idx, options);
+    } catch (err) {
+      console.warn(`[glyph markdown] fence renderer failed for \`${info}\`:`, err);
+      const escaped = mdInstance.utils.escapeHtml(token.content);
+      return `<pre><code>${escaped}</code></pre>`;
+    }
   };
 }
 
@@ -97,6 +131,9 @@ function initShiki(): Promise<void> {
 export function useMarkdown(content: string): string {
   const [html, setHtml] = useState(() => md.render(content));
   const [shikiReady, setShikiReady] = useState(shikiInitialized);
+  const [pluginRegistryVersion, setPluginRegistryVersion] = useState(
+    () => getRendererRegistryVersion(),
+  );
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -116,13 +153,22 @@ export function useMarkdown(content: string): string {
     }
   }, [shikiReady]);
 
+  // When a plugin activates or deactivates, re-render the current document so
+  // fences it claims (or relinquishes) switch visuals immediately.
+  useEffect(() => {
+    const unsubscribe = onRendererRegistryChange(() => {
+      if (mountedRef.current) setPluginRegistryVersion(getRendererRegistryVersion());
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setHtml(md.render(content));
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [content, shikiReady]);
+  }, [content, shikiReady, pluginRegistryVersion]);
 
   return html;
 }

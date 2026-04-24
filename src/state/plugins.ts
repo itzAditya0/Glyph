@@ -1,70 +1,70 @@
 /**
- * Plugin manifest discovery.
+ * Plugin discovery, activation, and the host-side registries plugins
+ * contribute to.
  *
- * Stage 1 scaffold — actual plugin loading, activation, and the
- * `PluginContext` API surface land in Stage 7 (see V2_Plan.md §4).
+ * v2.0 Stage 7 ships a focused JS tier: plugins drop into
+ * `<app-data>/Glyph/plugins/<id>/`, each has a `manifest.json` and a
+ * JS `entry` file, and the only contribution type they can register is
+ * a markdown fence renderer (`ctx.markdown.registerRenderer(lang, fn)`).
+ * Commands, UI panels, and the Rust tier land in v2.1.
  *
- * Today this module exposes the types and a stub `scanInstalledPlugins`
- * that returns `[]` in environments without a directory-listing command.
- * Stage 7 will add a `list_dir` Rust command (or adopt `tauri-plugin-fs`)
- * and wire this scanner to walk `<app-data>/Glyph/plugins/<id>/manifest.json`.
+ * Plugin code is executed by importing a blob URL seeded from the
+ * manifest's `entry` file contents, which the Rust scanner already
+ * pre-reads to save a round-trip. This works for single-file plugins;
+ * multi-file plugins needing relative imports will arrive with a
+ * custom Tauri URI scheme in a follow-up.
+ *
+ * The host does NOT sandbox plugins. Following the Obsidian model, if
+ * a plugin is enabled it is trusted; disabling is the trust control
+ * (Settings → Plugins). `declaredCapabilities` is informational.
  */
 
-/** Major API version the app supports. Plugins declare a compatible version via `glyphApi`. */
-export const GLYPH_API_MAJOR = 1;
+import { loadConfig, saveConfig } from "./config";
 
-export interface PluginManifest {
-  /** Reverse-DNS unique id. */
-  id: string;
-  name: string;
-  version: string;
-  /** Plugin's targeted Glyph API version, e.g. "1.0". */
-  glyphApi: string;
-  /** JS entry relative to the manifest directory. Absent for Rust-only plugins. */
-  entry?: string;
-  /** Native library path; platform suffix resolved at load time. */
-  rustEntry?: string;
-  /** Informational capability list shown in settings; not enforced. */
-  declaredCapabilities: string[];
-  contributes: {
-    markdownRenderers?: string[];
-    commands?: Array<{ id: string; title: string }>;
-    panels?: Array<{ id: string; location: "left" | "right" | "bottom"; title: string }>;
-  };
-  /**
-   * Resolved at scan time, not present on disk.
-   * Absolute path with OS-native separators (the scanner derives this
-   * from the manifest's `.../plugins/<id>/manifest.json` location).
-   */
-  manifestDir: string;
-  /** Resolved by merging with `config.pluginsEnabled`. */
-  enabled: boolean;
-}
+/** Major API version the host supports. Plugins targeting a larger major are rejected. */
+export const GLYPH_API_MAJOR = 1;
 
 const isTauri = "__TAURI_INTERNALS__" in window;
 
-/**
- * Validate a parsed manifest object. Returns the manifest or `null` if
- * any required field is missing / malformed. Caller logs rejections.
- */
-export function validateManifest(
-  raw: unknown,
+// -------- Manifest types --------
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  glyphApi: string;
+  entry?: string;
+  declaredCapabilities: string[];
+  contributes: {
+    markdownRenderers?: string[];
+  };
+  manifestDir: string;
+  enabled: boolean;
+  /** Populated by the scanner when `entry` is present and readable. */
+  entrySource: string | null;
+}
+
+interface RawManifestEntry {
+  manifestDir: string;
+  rawJson: string;
+  entrySource: string | null;
+}
+
+function validateManifest(
+  parsed: unknown,
   manifestDir: string,
-): Omit<PluginManifest, "enabled"> | null {
-  if (!raw || typeof raw !== "object") return null;
-  const m = raw as Record<string, unknown>;
+): Omit<PluginManifest, "enabled" | "entrySource"> | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const m = parsed as Record<string, unknown>;
 
-  const requiredStrings: Array<keyof PluginManifest> = ["id", "name", "version", "glyphApi"];
-  for (const key of requiredStrings) {
-    if (typeof m[key] !== "string" || (m[key] as string).length === 0) {
-      return null;
-    }
+  const required: Array<keyof PluginManifest> = ["id", "name", "version", "glyphApi"];
+  for (const key of required) {
+    if (typeof m[key] !== "string" || (m[key] as string).length === 0) return null;
   }
 
-  const apiMajor = parseInt(String(m.glyphApi).split(".")[0], 10);
-  if (Number.isNaN(apiMajor) || apiMajor > GLYPH_API_MAJOR) {
-    return null;
-  }
+  const majorStr = String(m.glyphApi).split(".")[0];
+  const major = parseInt(majorStr, 10);
+  if (Number.isNaN(major) || major > GLYPH_API_MAJOR) return null;
 
   const caps = Array.isArray(m.declaredCapabilities)
     ? (m.declaredCapabilities as unknown[]).filter((c): c is string => typeof c === "string")
@@ -78,23 +78,212 @@ export function validateManifest(
     version: String(m.version),
     glyphApi: String(m.glyphApi),
     entry: typeof m.entry === "string" ? m.entry : undefined,
-    rustEntry: typeof m.rustEntry === "string" ? m.rustEntry : undefined,
     declaredCapabilities: caps,
     contributes,
     manifestDir,
   };
 }
 
+// -------- Host-side registries --------
+
+export type MarkdownRenderer = (source: string) => string;
+
+const markdownRenderers = new Map<string, { pluginId: string; fn: MarkdownRenderer }>();
+
 /**
- * Walk `<app-data>/Glyph/plugins/*\/manifest.json` and return validated manifests.
- *
- * Stage 1: returns `[]` when the backing directory-listing command is not
- * yet available. Stage 7 will replace this body with the real scanner.
+ * Look up a fence renderer by language (`info` string from markdown-it).
+ * Used by the custom fence rule in `useMarkdown.ts` to give plugins a
+ * chance before Shiki syntax-highlights the block.
  */
+export function getMarkdownRenderer(lang: string): MarkdownRenderer | null {
+  return markdownRenderers.get(lang)?.fn ?? null;
+}
+
+// -------- Plugin context (the surface plugins see) --------
+
+export interface PluginContext {
+  markdown: {
+    /**
+     * Register a renderer for `\`\`\`lang` fences. The function receives the
+     * raw fence content and returns the HTML that should replace it. Host
+     * sanitizes the result in `Preview` before it reaches the DOM.
+     */
+    registerRenderer: (lang: string, fn: MarkdownRenderer) => void;
+  };
+}
+
+export interface ActivatedPlugin {
+  manifest: PluginManifest;
+  /** Plugin-provided `deactivate` function (if exported). */
+  deactivate?: () => void | Promise<void>;
+  /** Keys registered by this plugin, used for clean teardown. */
+  registered: {
+    markdownLangs: string[];
+  };
+  /** Blob URL used for the dynamic import; revoked on deactivate. */
+  blobUrl: string;
+}
+
+const activePlugins = new Map<string, ActivatedPlugin>();
+
+// -------- Discovery --------
+
 export async function scanInstalledPlugins(): Promise<PluginManifest[]> {
   if (!isTauri) return [];
-  // Stage 7 will add a `list_plugin_manifests` Rust command that returns
-  // `[{ manifestDir, rawJson }]`; this function will then map that list
-  // through `validateManifest` and merge enabled state from `loadConfig`.
-  return [];
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const [entries, config] = await Promise.all([
+      invoke<RawManifestEntry[]>("list_plugin_manifests"),
+      loadConfig(),
+    ]);
+
+    const manifests: PluginManifest[] = [];
+    for (const entry of entries) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(entry.rawJson);
+      } catch (err) {
+        console.warn(`[glyph plugins] malformed manifest in ${entry.manifestDir}:`, err);
+        continue;
+      }
+      const validated = validateManifest(parsed, entry.manifestDir);
+      if (!validated) {
+        console.warn(`[glyph plugins] rejected manifest in ${entry.manifestDir}: missing or unsupported fields`);
+        continue;
+      }
+      manifests.push({
+        ...validated,
+        enabled: config.pluginsEnabled[validated.id] ?? false,
+        entrySource: entry.entrySource,
+      });
+    }
+    return manifests;
+  } catch (err) {
+    console.warn("[glyph plugins] scan failed:", err);
+    return [];
+  }
+}
+
+// -------- Activation / deactivation --------
+
+async function runPluginEntry(manifest: PluginManifest): Promise<ActivatedPlugin | null> {
+  if (!manifest.entrySource) {
+    console.warn(`[glyph plugins] ${manifest.id} has no readable entry; skipping`);
+    return null;
+  }
+
+  // Wrap the plugin code in a Blob and import it. Blob URLs give us ESM
+  // semantics without needing a custom protocol handler. Plugins export
+  // `activate(ctx)` and optionally `deactivate()`.
+  const blob = new Blob([manifest.entrySource], { type: "text/javascript" });
+  const blobUrl = URL.createObjectURL(blob);
+
+  const registered: ActivatedPlugin["registered"] = { markdownLangs: [] };
+
+  const ctx: PluginContext = {
+    markdown: {
+      registerRenderer(lang, fn) {
+        if (markdownRenderers.has(lang)) {
+          console.warn(
+            `[glyph plugins] ${manifest.id} tried to register duplicate renderer for \`${lang}\`; ignoring`,
+          );
+          return;
+        }
+        markdownRenderers.set(lang, { pluginId: manifest.id, fn });
+        registered.markdownLangs.push(lang);
+      },
+    },
+  };
+
+  try {
+    const mod = (await import(/* @vite-ignore */ blobUrl)) as {
+      activate?: (ctx: PluginContext) => void | Promise<void>;
+      deactivate?: () => void | Promise<void>;
+    };
+    if (typeof mod.activate !== "function") {
+      console.warn(`[glyph plugins] ${manifest.id} exports no activate() function`);
+      URL.revokeObjectURL(blobUrl);
+      return null;
+    }
+    await mod.activate(ctx);
+    return {
+      manifest,
+      deactivate: typeof mod.deactivate === "function" ? mod.deactivate : undefined,
+      registered,
+      blobUrl,
+    };
+  } catch (err) {
+    console.error(`[glyph plugins] ${manifest.id} activation threw:`, err);
+    URL.revokeObjectURL(blobUrl);
+    return null;
+  }
+}
+
+/**
+ * Subscribe to host-side registry changes (plugin activated/deactivated).
+ * The markdown hook listens on this to re-render after a plugin's renderer
+ * comes online or goes away.
+ */
+let rendererRegistryVersion = 0;
+const rendererRegistryListeners = new Set<() => void>();
+
+export function onRendererRegistryChange(listener: () => void): () => void {
+  rendererRegistryListeners.add(listener);
+  return () => {
+    rendererRegistryListeners.delete(listener);
+  };
+}
+
+export function getRendererRegistryVersion(): number {
+  return rendererRegistryVersion;
+}
+
+function bumpRendererRegistry(): void {
+  rendererRegistryVersion++;
+  for (const listener of rendererRegistryListeners) listener();
+}
+
+export async function activatePlugin(manifest: PluginManifest): Promise<boolean> {
+  if (activePlugins.has(manifest.id)) return true;
+  const active = await runPluginEntry(manifest);
+  if (!active) return false;
+  activePlugins.set(manifest.id, active);
+  bumpRendererRegistry();
+  return true;
+}
+
+export async function deactivatePlugin(id: string): Promise<void> {
+  const active = activePlugins.get(id);
+  if (!active) return;
+  for (const lang of active.registered.markdownLangs) {
+    const entry = markdownRenderers.get(lang);
+    if (entry?.pluginId === id) markdownRenderers.delete(lang);
+  }
+  try {
+    await active.deactivate?.();
+  } catch (err) {
+    console.error(`[glyph plugins] ${id} deactivate() threw:`, err);
+  }
+  URL.revokeObjectURL(active.blobUrl);
+  activePlugins.delete(id);
+  bumpRendererRegistry();
+}
+
+/**
+ * Persist a plugin's enabled flag and activate/deactivate to match. The
+ * caller (Settings UI) passes the new desired state; the host reconciles.
+ */
+export async function setPluginEnabled(
+  manifest: PluginManifest,
+  enabled: boolean,
+): Promise<void> {
+  const current = await loadConfig();
+  await saveConfig({
+    pluginsEnabled: { ...current.pluginsEnabled, [manifest.id]: enabled },
+  });
+  if (enabled) {
+    await activatePlugin({ ...manifest, enabled: true });
+  } else {
+    await deactivatePlugin(manifest.id);
+  }
 }

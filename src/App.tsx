@@ -16,6 +16,12 @@ import { useActiveTab, useTabs } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
 import { loadSession, saveSession } from "./state/session";
 import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
+import {
+  activatePlugin,
+  scanInstalledPlugins,
+  setPluginEnabled,
+  type PluginManifest,
+} from "./state/plugins";
 import { useHeadings, type HeadingEntry } from "./hooks/useHeadings";
 import Settings from "./components/Settings";
 import Outline from "./components/Outline";
@@ -46,6 +52,7 @@ function App() {
   const [previewThemes, setPreviewThemes] = useState<PreviewTheme[]>([]);
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const settingsHydratedRef = useRef(false);
   const headings = useHeadings(content);
 
@@ -54,14 +61,27 @@ function App() {
   // state for the lifetime of the session (re-scans require a restart).
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadConfig(), listThemes()]).then(([cfg, themes]) => {
-      if (cancelled) return;
-      setVimMode(cfg.vimMode);
-      setPreviewThemes(themes);
-      setPreviewTheme(cfg.previewTheme);
-      setSidebarOpen(cfg.sidebarOpen);
-      settingsHydratedRef.current = true;
-    });
+    Promise.all([loadConfig(), listThemes(), scanInstalledPlugins()]).then(
+      async ([cfg, themes, manifests]) => {
+        if (cancelled) return;
+        setVimMode(cfg.vimMode);
+        setPreviewThemes(themes);
+        setPreviewTheme(cfg.previewTheme);
+        setSidebarOpen(cfg.sidebarOpen);
+        setPlugins(manifests);
+        settingsHydratedRef.current = true;
+
+        // Activate plugins the user had previously enabled. Failures are
+        // logged by `activatePlugin` itself; we don't block startup on them.
+        for (const manifest of manifests) {
+          if (manifest.enabled) {
+            activatePlugin(manifest).catch(() => {
+              // already logged by the host
+            });
+          }
+        }
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -181,6 +201,18 @@ function App() {
   const handlePreviewThemeChange = useCallback((name: string | null) => {
     setPreviewTheme(name);
   }, []);
+
+  const handleTogglePlugin = useCallback(
+    (manifest: PluginManifest, enabled: boolean) => {
+      setPlugins((current) =>
+        current.map((p) => (p.id === manifest.id ? { ...p, enabled } : p)),
+      );
+      setPluginEnabled(manifest, enabled).catch((err) => {
+        console.error(`Failed to toggle plugin ${manifest.id}:`, err);
+      });
+    },
+    [],
+  );
 
   // Persist sidebarOpen across launches; skip the initial hydrate.
   useEffect(() => {
@@ -645,6 +677,8 @@ function App() {
         themes={previewThemes}
         previewTheme={previewTheme}
         onPreviewThemeChange={handlePreviewThemeChange}
+        plugins={plugins}
+        onTogglePlugin={handleTogglePlugin}
       />
     </div>
   );

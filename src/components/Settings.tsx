@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { PreviewTheme } from "../state/themes";
+import type { PluginManifest } from "../state/plugins";
 import styles from "./Settings.module.css";
 
 interface SettingsProps {
@@ -24,6 +25,8 @@ interface SettingsProps {
   themes: PreviewTheme[];
   previewTheme: string | null;
   onPreviewThemeChange: (name: string | null) => void;
+  plugins: PluginManifest[];
+  onTogglePlugin: (manifest: PluginManifest, enabled: boolean) => void;
 }
 
 export default function Settings({
@@ -34,6 +37,8 @@ export default function Settings({
   themes,
   previewTheme,
   onPreviewThemeChange,
+  plugins,
+  onTogglePlugin,
 }: SettingsProps) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   // Remember the element that had focus when the modal opened so we can
@@ -160,6 +165,39 @@ export default function Settings({
                 </select>
               }
             />
+          </section>
+
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>Plugins</h3>
+            {plugins.length === 0 ? (
+              <p className={styles.rowDescription}>
+                Drop plugin folders into the Glyph/plugins directory in your
+                app-data directory. Each folder needs a manifest.json and a JS
+                entry file. Glyph discovers them on the next launch.
+              </p>
+            ) : (
+              plugins.map((plugin) => (
+                <SettingRow
+                  key={plugin.id}
+                  id={`glyph-plugin-${plugin.id}`}
+                  label={`${plugin.name} (${plugin.version})`}
+                  description={
+                    plugin.declaredCapabilities.length > 0
+                      ? `Declared capabilities: ${plugin.declaredCapabilities.join(", ")}`
+                      : plugin.id
+                  }
+                  control={
+                    <input
+                      id={`glyph-plugin-${plugin.id}`}
+                      type="checkbox"
+                      checked={plugin.enabled}
+                      onChange={(e) => onTogglePlugin(plugin, e.target.checked)}
+                      className={styles.toggle}
+                    />
+                  }
+                />
+              ))
+            )}
           </section>
         </div>
       </div>
