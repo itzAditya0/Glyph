@@ -1,6 +1,6 @@
 [package]
 name = "glyph"
-version = "0.1.0"
+version = "2.0.0"
 description = "A lightweight, fast Markdown editor built with Tauri, React, and CodeMirror 6."
 authors = ["itzAditya0"]
 edition = "2021"
