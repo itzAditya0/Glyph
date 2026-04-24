@@ -47,6 +47,12 @@ export interface TabsActions {
   open: (path: string, content: string) => void;
   /** Close a tab; if active, the previous sibling becomes active. */
   close: (id: string) => void;
+  /**
+   * Atomic "close, and if that was the last tab, replace it with a fresh
+   * Untitled". Prevents the activeId=null frame that a separate
+   * close + newUntitled pair would expose.
+   */
+  closeOrReplace: (id: string) => void;
   /** Switch the active tab. */
   switchTo: (id: string) => void;
   /** Create a new Untitled tab and switch to it. */
@@ -70,6 +76,20 @@ export interface TabsActions {
   reorder: (orderedIds: string[]) => void;
   /** Reopen the most recently closed tab. Wired in Stage 6. */
   reopenLastClosed: () => void;
+  /**
+   * Replace the entire tab set. Used by session restore on mount. Each
+   * entry is given a fresh id; `activePath` selects the initial active
+   * tab by path (falls back to the first tab when not matched).
+   */
+  hydrate: (
+    tabs: Array<{
+      path: string;
+      content: string;
+      cursor: { line: number; col: number };
+      scrollTop: number;
+    }>,
+    activePath: string | null,
+  ) => void;
 }
 
 export interface TabsContextValue {
@@ -111,6 +131,7 @@ function createUntitledTab(content = ""): Tab {
 type Action =
   | { type: "open"; id: string; path: string; content: string }
   | { type: "close"; id: string }
+  | { type: "closeOrReplace"; id: string; replacement: Tab }
   | { type: "switchTo"; id: string }
   | { type: "newUntitled"; id: string; content: string }
   | { type: "updateContent"; id: string; content: string; dirty: boolean }
@@ -118,7 +139,8 @@ type Action =
   | { type: "updateScrollTop"; id: string; scrollTop: number }
   | { type: "markSaved"; id: string }
   | { type: "setPath"; id: string; path: string }
-  | { type: "reorder"; orderedIds: string[] };
+  | { type: "reorder"; orderedIds: string[] }
+  | { type: "hydrate"; tabs: Tab[]; activeId: string | null };
 
 function reducer(state: TabsState, action: Action): TabsState {
   switch (action.type) {
@@ -147,9 +169,28 @@ function reducer(state: TabsState, action: Action): TabsState {
         if (remaining.length === 0) {
           activeId = null;
         } else {
+          // Prefer the next-left sibling, fall back to the next-right when
+          // closing the leftmost tab, final fallback to remaining[0].
+          // Matches VS Code / Chrome behaviour.
           const fallback = remaining[idx - 1] ?? remaining[idx] ?? remaining[0];
           activeId = fallback.id;
         }
+      }
+      return { tabs: remaining, activeId };
+    }
+    case "closeOrReplace": {
+      // Atomic "close this tab; if it was the last, replace with a fresh
+      // Untitled so the editor always has a document". Used by Cmd+W and
+      // the tab × button so there's never a frame where activeId is null.
+      const remaining = state.tabs.filter((t) => t.id !== action.id);
+      if (remaining.length === 0) {
+        return { tabs: [action.replacement], activeId: action.replacement.id };
+      }
+      const idx = state.tabs.findIndex((t) => t.id === action.id);
+      let activeId = state.activeId;
+      if (state.activeId === action.id) {
+        const fallback = remaining[idx - 1] ?? remaining[idx] ?? remaining[0];
+        activeId = fallback.id;
       }
       return { tabs: remaining, activeId };
     }
@@ -222,6 +263,9 @@ function reducer(state: TabsState, action: Action): TabsState {
       const missing = state.tabs.filter((t) => !action.orderedIds.includes(t.id));
       return { ...state, tabs: [...reordered, ...missing] };
     }
+    case "hydrate": {
+      return { tabs: action.tabs, activeId: action.activeId };
+    }
     default:
       return state;
   }
@@ -293,6 +337,33 @@ export function TabsProvider({ children, initialContent }: TabsProviderProps) {
         savedContentRef.current.delete(id);
         dispatch({ type: "close", id });
       },
+      closeOrReplace(id) {
+        const tabs = tabsRef.current;
+        const closing = tabs.find((t) => t.id === id);
+        if (closing) {
+          closedRef.current.unshift({
+            path: closing.path,
+            content: closing.content,
+            fileName: closing.fileName,
+            cursor: closing.cursor,
+            scrollTop: closing.scrollTop,
+          });
+          if (closedRef.current.length > 10) {
+            closedRef.current.length = 10;
+          }
+        }
+        savedContentRef.current.delete(id);
+        // Only allocate a replacement tab when this close empties the list;
+        // otherwise fall through to a plain close to avoid a stale saved-
+        // content entry for a replacement we never use.
+        if (tabs.length === 1 && tabs[0].id === id) {
+          const replacement = createUntitledTab("");
+          savedContentRef.current.set(replacement.id, "");
+          dispatch({ type: "closeOrReplace", id, replacement });
+        } else {
+          dispatch({ type: "close", id });
+        }
+      },
       switchTo(id) {
         dispatch({ type: "switchTo", id });
       },
@@ -324,13 +395,38 @@ export function TabsProvider({ children, initialContent }: TabsProviderProps) {
         dispatch({ type: "reorder", orderedIds });
       },
       reopenLastClosed() {
-        // No-op until Stage 6 binds the UI. Ring buffer is already populated
-        // so Stage 6 inherits history from the moment it flips on.
-        if (closedRef.current.length > 0) {
-          console.warn(
-            "[glyph] reopenLastClosed is not wired until Stage 6 Tabs UI lands",
-          );
-        }
+        const last = closedRef.current.shift();
+        if (!last || last.path === null) return;
+        const id = generateId();
+        savedContentRef.current.set(id, last.content);
+        dispatch({ type: "open", id, path: last.path, content: last.content });
+      },
+      hydrate(restored, activePath) {
+        if (restored.length === 0) return;
+        // Clear stale bookkeeping: the welcome tab's baseline and any
+        // closed-tab ring entries all reference ids that will no longer
+        // exist after the dispatch. Without the reset the maps would
+        // grow unbounded across session restores.
+        savedContentRef.current.clear();
+        closedRef.current.length = 0;
+        const hydrated: Tab[] = restored.map((entry) => {
+          const id = generateId();
+          savedContentRef.current.set(id, entry.content);
+          return {
+            id,
+            path: entry.path,
+            fileName: basename(entry.path),
+            content: entry.content,
+            isDirty: false,
+            cursor: entry.cursor,
+            scrollTop: entry.scrollTop,
+          };
+        });
+        const match = activePath
+          ? hydrated.find((t) => t.path === activePath)
+          : null;
+        const activeId = match?.id ?? hydrated[0].id;
+        dispatch({ type: "hydrate", tabs: hydrated, activeId });
       },
     };
   }, []);

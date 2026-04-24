@@ -12,12 +12,14 @@ import { useAutoSave } from "./hooks/useAutoSave";
 import { useRecentFiles } from "./hooks/useRecentFiles";
 import { buildHtmlDocument } from "./utils/exportHtml";
 import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRender";
-import { useActiveTab } from "./state/tabs";
+import { useActiveTab, useTabs } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
+import { loadSession, saveSession } from "./state/session";
 import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
 import { useHeadings, type HeadingEntry } from "./hooks/useHeadings";
 import Settings from "./components/Settings";
 import Outline from "./components/Outline";
+import TabBar from "./components/TabBar";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -29,6 +31,7 @@ const isTauri = "__TAURI_INTERNALS__" in window;
 
 function App() {
   const editorRef = useRef<EditorHandle>(null);
+  const { state: tabsState, actions: tabsActions } = useTabs();
   const { tab, setContent, setCursor } = useActiveTab();
   const content = tab?.content ?? "";
   const cursor = tab?.cursor ?? { line: 1, col: 1 };
@@ -63,6 +66,93 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  // Restore the previous session's tabs (paths + cursor/scroll) on mount.
+  // Missing files are silently skipped; the welcome Untitled tab stays if
+  // no real files could be restored. Corrupt session.json yields an empty
+  // session, which is also a no-op here.
+  const sessionHydratedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const session = await loadSession();
+      if (cancelled || session.tabs.length === 0) {
+        sessionHydratedRef.current = true;
+        return;
+      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      // Read all files in parallel — cold-start latency with many tabs
+      // was dominated by sequential Rust round-trips.
+      const results = await Promise.allSettled(
+        session.tabs.map((t) => invoke<string>("read_file", { path: t.path })),
+      );
+      const restored: Array<{
+        path: string;
+        content: string;
+        cursor: { line: number; col: number };
+        scrollTop: number;
+      }> = [];
+      results.forEach((result, i) => {
+        if (result.status === "fulfilled") {
+          const t = session.tabs[i];
+          restored.push({
+            path: t.path,
+            content: result.value,
+            cursor: t.cursor,
+            scrollTop: t.scrollTop,
+          });
+        }
+        // Rejected entries silently skipped — placeholder-tab UI for
+        // missing files is deferred per V2_Plan §3.3.
+      });
+      if (cancelled) return;
+      if (restored.length > 0) {
+        tabsActions.hydrate(restored, session.activePath);
+      }
+      sessionHydratedRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tabsActions]);
+
+  // Persist the current tab set on changes, debounced so rapid edits don't
+  // thrash disk. Content is intentionally excluded — disk remains the source
+  // of truth — so we project tabs to just their persisted fields and gate
+  // the effect on a stable key. Without this, every keystroke triggers the
+  // debounce even though the keystroke never changes what gets written.
+  const sessionKey = useMemo(() => {
+    const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId);
+    return JSON.stringify({
+      tabs: tabsState.tabs
+        .filter((t) => t.path !== null)
+        .map((t) => [t.path, t.cursor.line, t.cursor.col, t.scrollTop]),
+      activePath: activeTab?.path ?? null,
+    });
+  }, [tabsState]);
+
+  useEffect(() => {
+    if (!sessionHydratedRef.current) return;
+    const timer = setTimeout(() => {
+      const persisted = tabsState.tabs
+        .filter((t) => t.path !== null)
+        .map((t) => ({
+          path: t.path as string,
+          cursor: t.cursor,
+          scrollTop: t.scrollTop,
+        }));
+      const activeTab = tabsState.tabs.find((t) => t.id === tabsState.activeId);
+      saveSession({
+        schemaVersion: 1,
+        tabs: persisted,
+        activePath: activeTab?.path ?? null,
+      }).catch((err) => {
+        console.error("Failed to persist session:", err);
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey]);
 
   // Persist vimMode whenever it changes — but not on the initial hydrate,
   // or we'd overwrite disk with the default before `loadConfig` returns.
@@ -99,6 +189,12 @@ function App() {
       console.error("Failed to persist sidebarOpen setting:", err);
     });
   }, [sidebarOpen]);
+
+  const confirmCloseDirty = useCallback(
+    (fileName: string) =>
+      window.confirm(`“${fileName}” has unsaved changes. Close anyway?`),
+    [],
+  );
 
   const handleHeadingClick = useCallback((heading: HeadingEntry) => {
     // Drive both panes: editor jumps to the source line, preview scrolls
@@ -351,13 +447,59 @@ function App() {
         e.preventDefault();
         setSidebarOpen((open) => !open);
       }
+      // Tab management shortcuts (Stage 6).
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "t") {
+        e.preventDefault();
+        tabsActions.newUntitled();
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "w") {
+        e.preventDefault();
+        const active = tabsState.tabs.find((t) => t.id === tabsState.activeId);
+        if (!active) return;
+        const proceed = active.isDirty ? confirmCloseDirty(active.fileName) : true;
+        if (proceed) {
+          tabsActions.closeOrReplace(active.id);
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && (e.key === "t" || e.key === "T")) {
+        e.preventDefault();
+        tabsActions.reopenLastClosed();
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = tabsState.tabs[idx];
+        if (target) {
+          e.preventDefault();
+          tabsActions.switchTo(target.id);
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        const currentIdx = tabsState.tabs.findIndex((t) => t.id === tabsState.activeId);
+        if (currentIdx === -1) return;
+        const delta = e.key === "ArrowRight" ? 1 : -1;
+        const nextIdx = (currentIdx + delta + tabsState.tabs.length) % tabsState.tabs.length;
+        tabsActions.switchTo(tabsState.tabs[nextIdx].id);
+      }
       if (e.key === "Escape" && zenMode) {
         setZenMode(false);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [content, saveFile, saveFileAs, handleOpenFile, handleExportHtml, handlePrint, handleCopyAsRichText, zenMode]);
+  }, [
+    content,
+    saveFile,
+    saveFileAs,
+    handleOpenFile,
+    handleExportHtml,
+    handlePrint,
+    handleCopyAsRichText,
+    zenMode,
+    tabsActions,
+    tabsState,
+    confirmCloseDirty,
+  ]);
 
   // Drag and drop (Tauri only)
   useEffect(() => {
@@ -436,6 +578,7 @@ function App() {
 
   return (
     <div className={`${styles.layout} ${zenMode ? styles.zen : ""}`}>
+      {!zenMode && <TabBar confirmCloseDirty={confirmCloseDirty} />}
       {!zenMode && <Toolbar
         fileName={fileName}
         filePath={filePath}
