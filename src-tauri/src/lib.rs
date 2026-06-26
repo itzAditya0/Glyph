@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod drafts;
 mod plugins;
 
 use std::env;
@@ -91,7 +92,10 @@ pub fn run() {
             commands::save_file,
             config::app_data_dir,
             config::list_themes,
-            plugins::list_plugin_manifests
+            plugins::list_plugin_manifests,
+            drafts::list_drafts,
+            drafts::save_draft,
+            drafts::delete_draft
         ])
         .setup(|app| {
             // First-instance argv. Branch on `export` subcommand vs plain

@@ -89,11 +89,17 @@ export interface TabsActions {
    */
   hydrate: (
     tabs: Array<{
-      path: string;
+      path: string | null;
       content: string;
       cursor: { line: number; col: number };
       scrollTop: number;
       missing?: boolean;
+      /**
+       * Optional dirty baseline. When provided and different from `content`,
+       * the tab is restored as dirty (a recovered draft). When omitted, the
+       * baseline equals `content` and the tab is clean.
+       */
+      savedContent?: string;
     }>,
     activePath: string | null,
   ) => void;
@@ -437,13 +443,14 @@ export function TabsProvider({ children, initialContent }: TabsProviderProps) {
         closedRef.current.length = 0;
         const hydrated: Tab[] = restored.map((entry) => {
           const id = generateId();
-          savedContentRef.current.set(id, entry.content);
+          const baseline = entry.savedContent ?? entry.content;
+          savedContentRef.current.set(id, baseline);
           return {
             id,
             path: entry.path,
-            fileName: basename(entry.path),
+            fileName: entry.path ? basename(entry.path) : "Untitled",
             content: entry.content,
-            isDirty: false,
+            isDirty: entry.content !== baseline,
             cursor: entry.cursor,
             scrollTop: entry.scrollTop,
             missing: entry.missing ?? false,

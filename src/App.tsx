@@ -15,6 +15,7 @@ import { prerenderMermaid, prerenderMermaidFragment } from "./utils/mermaidRende
 import { useActiveTab, useTabs } from "./state/tabs";
 import { loadConfig, saveConfig } from "./state/config";
 import { loadSession, saveSession } from "./state/session";
+import { listDrafts, saveDraft, deleteDraft } from "./state/drafts";
 import { runCliExport } from "./state/cliExport";
 import { applyTheme, findTheme, listThemes, type PreviewTheme } from "./state/themes";
 import {
@@ -94,49 +95,101 @@ function App() {
   // no real files could be restored. Corrupt session.json yields an empty
   // session, which is also a no-op here.
   const sessionHydratedRef = useRef(false);
+  // Draft keys seen this session, so the reconcile effect knows which draft
+  // files to delete when a tab is saved or closed (including stale draft
+  // files left over from a previous run, which carry old tab ids).
+  const knownDraftKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const session = await loadSession();
-      if (cancelled || session.tabs.length === 0) {
-        sessionHydratedRef.current = true;
-        return;
+      const [session, drafts] = await Promise.all([loadSession(), listDrafts()]);
+      knownDraftKeysRef.current = new Set(drafts.map((d) => d.key));
+
+      // Drafts keyed by their owning path, for recovering unsaved edits to a
+      // saved file. Untitled drafts (path null) become fresh tabs below.
+      const draftByPath = new Map<string, string>();
+      const untitledDrafts: string[] = [];
+      for (const { draft } of drafts) {
+        if (draft.path) draftByPath.set(draft.path, draft.content);
+        else if (draft.content.trim() !== "") untitledDrafts.push(draft.content);
       }
-      const { invoke } = await import("@tauri-apps/api/core");
-      // Read all files in parallel — cold-start latency with many tabs
-      // was dominated by sequential Rust round-trips.
-      const results = await Promise.allSettled(
-        session.tabs.map((t) => invoke<string>("read_file", { path: t.path })),
-      );
-      const restored: Array<{
-        path: string;
+
+      type RestoredTab = {
+        path: string | null;
         content: string;
         cursor: { line: number; col: number };
         scrollTop: number;
         missing?: boolean;
-      }> = [];
-      results.forEach((result, i) => {
-        const t = session.tabs[i];
-        if (result.status === "fulfilled") {
-          restored.push({
-            path: t.path,
-            content: result.value,
-            cursor: t.cursor,
-            scrollTop: t.scrollTop,
-          });
-        } else {
-          // File moved or deleted since last session — keep a placeholder
-          // tab so the user can see what was lost and dismiss it, rather
-          // than silently dropping it.
-          restored.push({
-            path: t.path,
-            content: "",
-            cursor: t.cursor,
-            scrollTop: t.scrollTop,
-            missing: true,
-          });
-        }
-      });
+        savedContent?: string;
+      };
+      const restored: RestoredTab[] = [];
+
+      if (session.tabs.length > 0) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        // Read all files in parallel — cold-start latency with many tabs
+        // was dominated by sequential Rust round-trips.
+        const results = await Promise.allSettled(
+          session.tabs.map((t) => invoke<string>("read_file", { path: t.path })),
+        );
+        results.forEach((result, i) => {
+          const t = session.tabs[i];
+          const recovered = draftByPath.get(t.path);
+          if (result.status === "fulfilled") {
+            // If a draft has different content than disk, restore the draft
+            // as recovered (dirty), keeping disk content as the baseline so
+            // reverting back to disk clears the dirty flag.
+            if (recovered !== undefined && recovered !== result.value) {
+              restored.push({
+                path: t.path,
+                content: recovered,
+                cursor: t.cursor,
+                scrollTop: t.scrollTop,
+                savedContent: result.value,
+              });
+            } else {
+              restored.push({
+                path: t.path,
+                content: result.value,
+                cursor: t.cursor,
+                scrollTop: t.scrollTop,
+              });
+            }
+          } else if (recovered !== undefined) {
+            // File unreadable but we have an unsaved draft — recover the
+            // content as a dirty buffer (baseline empty) rather than a
+            // missing placeholder.
+            restored.push({
+              path: t.path,
+              content: recovered,
+              cursor: t.cursor,
+              scrollTop: t.scrollTop,
+              savedContent: "",
+            });
+          } else {
+            // File moved or deleted and no draft — keep a placeholder tab so
+            // the user can see what was lost and dismiss it.
+            restored.push({
+              path: t.path,
+              content: "",
+              cursor: t.cursor,
+              scrollTop: t.scrollTop,
+              missing: true,
+            });
+          }
+        });
+      }
+
+      // Append recovered Untitled buffers as dirty tabs (baseline empty).
+      for (const content of untitledDrafts) {
+        restored.push({
+          path: null,
+          content,
+          cursor: { line: 1, col: 1 },
+          scrollTop: 0,
+          savedContent: "",
+        });
+      }
+
       if (cancelled) return;
       if (restored.length > 0) {
         tabsActions.hydrate(restored, session.activePath);
@@ -147,6 +200,38 @@ function App() {
       cancelled = true;
     };
   }, [tabsActions]);
+
+  // Reconcile crash-safe drafts against the live dirty set, debounced. Dirty
+  // tabs get their content (over)written; tabs that became clean (saved) or
+  // were closed have their draft deleted. This also cleans up stale draft
+  // files from a previous session whose ids no longer match any open tab.
+  const draftKey = useMemo(
+    () =>
+      JSON.stringify(
+        tabsState.tabs.filter((t) => t.isDirty).map((t) => [t.id, t.path, t.content]),
+      ),
+    [tabsState],
+  );
+  useEffect(() => {
+    if (!sessionHydratedRef.current) return;
+    const timer = setTimeout(() => {
+      const dirty = tabsState.tabs.filter((t) => t.isDirty);
+      const desired = new Set(dirty.map((t) => t.id));
+      for (const tab of dirty) {
+        saveDraft(tab.id, {
+          path: tab.path,
+          content: tab.content,
+          savedAt: Date.now(),
+        });
+      }
+      for (const key of knownDraftKeysRef.current) {
+        if (!desired.has(key)) deleteDraft(key);
+      }
+      knownDraftKeysRef.current = desired;
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
 
   // Persist the current tab set on changes, debounced so rapid edits don't
   // thrash disk. Content is intentionally excluded — disk remains the source
@@ -660,6 +745,12 @@ function App() {
             confirmed = window.confirm(message);
           }
           if (confirmed) {
+            // The user chose to discard, so drop the crash-safe drafts for
+            // those tabs — otherwise they'd resurrect on next launch. Wait
+            // for the deletes before destroying so they actually land.
+            await Promise.all(
+              [...knownDraftKeysRef.current].map((key) => deleteDraft(key)),
+            ).catch(() => undefined);
             // `destroy()` force-closes without re-firing onCloseRequested,
             // so there's no double-prompt.
             getCurrentWindow().destroy();
