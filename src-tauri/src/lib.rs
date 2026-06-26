@@ -93,6 +93,34 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // `glyph-plugin://<id>/<path>` serves files from a plugin's directory so
+        // the frontend can import multi-file plugins with working relative paths.
+        .register_uri_scheme_protocol("glyph-plugin", |ctx, request| {
+            let app = ctx.app_handle();
+            let uri = request.uri();
+            let plugin_id = uri.host().unwrap_or("").to_string();
+            let path = uri.path().to_string();
+            match plugins::serve_plugin_asset(app, &plugin_id, &path) {
+                Ok((bytes, mime)) => tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", mime)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(bytes)
+                    .unwrap_or_else(|_| {
+                        tauri::http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .expect("static 500 response")
+                    }),
+                Err(err) => {
+                    eprintln!("[glyph plugins] {err}");
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body(err.into_bytes())
+                        .expect("static 404 response")
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
             commands::save_file,

@@ -99,6 +99,48 @@ export function getMarkdownRenderer(lang: string): MarkdownRenderer | null {
   return markdownRenderers.get(lang)?.fn ?? null;
 }
 
+// -------- Command + panel registries --------
+
+export interface PluginCommand {
+  id: string;
+  title: string;
+  pluginId: string;
+  run: () => void | Promise<void>;
+}
+
+const commands = new Map<string, PluginCommand>();
+
+/** All registered commands, for the command palette. */
+export function getCommands(): PluginCommand[] {
+  return [...commands.values()];
+}
+
+/** Run a registered command by id. */
+export async function runCommand(id: string): Promise<void> {
+  const command = commands.get(id);
+  if (!command) return;
+  try {
+    await command.run();
+  } catch (err) {
+    console.error(`[glyph plugins] command "${id}" threw:`, err);
+  }
+}
+
+export interface PluginPanel {
+  id: string;
+  title: string;
+  pluginId: string;
+  /** Populate the given container with the panel's DOM. May return a cleanup fn. */
+  mount: (container: HTMLElement) => void | (() => void);
+}
+
+const panels = new Map<string, PluginPanel>();
+
+/** All registered panels, for the panel dock. */
+export function getPanels(): PluginPanel[] {
+  return [...panels.values()];
+}
+
 // -------- Plugin context (the surface plugins see) --------
 
 export interface PluginContext {
@@ -110,6 +152,19 @@ export interface PluginContext {
      */
     registerRenderer: (lang: string, fn: MarkdownRenderer) => void;
   };
+  commands: {
+    /** Register a command surfaced in the command palette (Cmd/Ctrl+Shift+P). */
+    register: (id: string, title: string, run: () => void | Promise<void>) => void;
+  };
+  ui: {
+    /**
+     * Register a side panel. `mount` receives a container element to populate
+     * with DOM and may return a cleanup function called on deactivate.
+     */
+    registerPanel: (
+      panel: { id: string; title: string; mount: (container: HTMLElement) => void | (() => void) },
+    ) => void;
+  };
 }
 
 export interface ActivatedPlugin {
@@ -119,9 +174,11 @@ export interface ActivatedPlugin {
   /** Keys registered by this plugin, used for clean teardown. */
   registered: {
     markdownLangs: string[];
+    commandIds: string[];
+    panelIds: string[];
   };
-  /** Blob URL used for the dynamic import; revoked on deactivate. */
-  blobUrl: string;
+  /** Object URL to revoke on deactivate (single-file blob fallback only). */
+  blobUrl: string | null;
 }
 
 const activePlugins = new Map<string, ActivatedPlugin>();
@@ -167,18 +224,11 @@ export async function scanInstalledPlugins(): Promise<PluginManifest[]> {
 // -------- Activation / deactivation --------
 
 async function runPluginEntry(manifest: PluginManifest): Promise<ActivatedPlugin | null> {
-  if (!manifest.entrySource) {
-    console.warn(`[glyph plugins] ${manifest.id} has no readable entry; skipping`);
-    return null;
-  }
-
-  // Wrap the plugin code in a Blob and import it. Blob URLs give us ESM
-  // semantics without needing a custom protocol handler. Plugins export
-  // `activate(ctx)` and optionally `deactivate()`.
-  const blob = new Blob([manifest.entrySource], { type: "text/javascript" });
-  const blobUrl = URL.createObjectURL(blob);
-
-  const registered: ActivatedPlugin["registered"] = { markdownLangs: [] };
+  const registered: ActivatedPlugin["registered"] = {
+    markdownLangs: [],
+    commandIds: [],
+    panelIds: [],
+  };
 
   const ctx: PluginContext = {
     markdown: {
@@ -193,16 +243,53 @@ async function runPluginEntry(manifest: PluginManifest): Promise<ActivatedPlugin
         registered.markdownLangs.push(lang);
       },
     },
+    commands: {
+      register(id, title, run) {
+        // Namespace the command under the plugin id to avoid collisions.
+        const key = `${manifest.id}:${id}`;
+        commands.set(key, { id: key, title, pluginId: manifest.id, run });
+        registered.commandIds.push(key);
+      },
+    },
+    ui: {
+      registerPanel(panel) {
+        const key = `${manifest.id}:${panel.id}`;
+        panels.set(key, {
+          id: key,
+          title: panel.title,
+          pluginId: manifest.id,
+          mount: panel.mount,
+        });
+        registered.panelIds.push(key);
+      },
+    },
   };
 
+  // Prefer the `glyph-plugin://` protocol so multi-file plugins can use
+  // relative imports. Fall back to a blob URL built from the pre-read entry
+  // source for the rare case the protocol or entry path is unavailable.
+  let importUrl: string;
+  let blobUrl: string | null = null;
+  if (manifest.entry && isTauri) {
+    const rel = manifest.entry.replace(/^\.?\//, "");
+    importUrl = `glyph-plugin://${manifest.id}/${rel}`;
+  } else if (manifest.entrySource) {
+    const blob = new Blob([manifest.entrySource], { type: "text/javascript" });
+    blobUrl = URL.createObjectURL(blob);
+    importUrl = blobUrl;
+  } else {
+    console.warn(`[glyph plugins] ${manifest.id} has no loadable entry; skipping`);
+    return null;
+  }
+
   try {
-    const mod = (await import(/* @vite-ignore */ blobUrl)) as {
+    const mod = (await import(/* @vite-ignore */ importUrl)) as {
       activate?: (ctx: PluginContext) => void | Promise<void>;
       deactivate?: () => void | Promise<void>;
     };
     if (typeof mod.activate !== "function") {
       console.warn(`[glyph plugins] ${manifest.id} exports no activate() function`);
-      URL.revokeObjectURL(blobUrl);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
       return null;
     }
     await mod.activate(ctx);
@@ -214,33 +301,36 @@ async function runPluginEntry(manifest: PluginManifest): Promise<ActivatedPlugin
     };
   } catch (err) {
     console.error(`[glyph plugins] ${manifest.id} activation threw:`, err);
-    URL.revokeObjectURL(blobUrl);
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
     return null;
   }
 }
 
 /**
- * Subscribe to host-side registry changes (plugin activated/deactivated).
- * The markdown hook listens on this to re-render after a plugin's renderer
- * comes online or goes away.
+ * Subscribe to host-side registry changes (a plugin activated or
+ * deactivated, changing the set of renderers, commands, and panels).
+ * The markdown hook, command palette, and panel dock all listen here.
  */
-let rendererRegistryVersion = 0;
-const rendererRegistryListeners = new Set<() => void>();
+let registryVersion = 0;
+const registryListeners = new Set<() => void>();
 
-export function onRendererRegistryChange(listener: () => void): () => void {
-  rendererRegistryListeners.add(listener);
+export function onPluginRegistryChange(listener: () => void): () => void {
+  registryListeners.add(listener);
   return () => {
-    rendererRegistryListeners.delete(listener);
+    registryListeners.delete(listener);
   };
 }
 
+/** @deprecated alias kept for the markdown hook; use onPluginRegistryChange. */
+export const onRendererRegistryChange = onPluginRegistryChange;
+
 export function getRendererRegistryVersion(): number {
-  return rendererRegistryVersion;
+  return registryVersion;
 }
 
-function bumpRendererRegistry(): void {
-  rendererRegistryVersion++;
-  for (const listener of rendererRegistryListeners) listener();
+function bumpRegistry(): void {
+  registryVersion++;
+  for (const listener of registryListeners) listener();
 }
 
 export async function activatePlugin(manifest: PluginManifest): Promise<boolean> {
@@ -248,7 +338,7 @@ export async function activatePlugin(manifest: PluginManifest): Promise<boolean>
   const active = await runPluginEntry(manifest);
   if (!active) return false;
   activePlugins.set(manifest.id, active);
-  bumpRendererRegistry();
+  bumpRegistry();
   return true;
 }
 
@@ -259,14 +349,16 @@ export async function deactivatePlugin(id: string): Promise<void> {
     const entry = markdownRenderers.get(lang);
     if (entry?.pluginId === id) markdownRenderers.delete(lang);
   }
+  for (const key of active.registered.commandIds) commands.delete(key);
+  for (const key of active.registered.panelIds) panels.delete(key);
   try {
     await active.deactivate?.();
   } catch (err) {
     console.error(`[glyph plugins] ${id} deactivate() threw:`, err);
   }
-  URL.revokeObjectURL(active.blobUrl);
+  if (active.blobUrl) URL.revokeObjectURL(active.blobUrl);
   activePlugins.delete(id);
-  bumpRendererRegistry();
+  bumpRegistry();
 }
 
 /**

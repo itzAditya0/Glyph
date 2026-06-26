@@ -1,0 +1,13 @@
+{
+  "id": "com.glyph.hello",
+  "name": "Hello Glyph",
+  "version": "1.0.0",
+  "glyphApi": "1.0",
+  "entry": "index.js",
+  "declaredCapabilities": [],
+  "contributes": {
+    "markdownRenderers": ["callout"],
+    "commands": [{ "id": "insertDate", "title": "Insert today's date" }],
+    "panels": [{ "id": "info", "location": "right", "title": "Hello Glyph" }]
+  }
+}

@@ -1,18 +1,19 @@
-//! Plugin-manifest discovery.
+//! Plugin-manifest discovery and the `glyph-plugin://` asset protocol.
 //!
-//! v2.0 Stage 7 (JS tier). Walks `<app-data>/Glyph/plugins/<id>/manifest.json`
+//! Stage 7 (JS tier) walks `<app-data>/Glyph/plugins/<id>/manifest.json`
 //! and returns the raw JSON plus the absolute directory path for each
 //! plugin. Validation and the JS API surface live in the frontend
 //! (`src/state/plugins.ts`) so manifest-shape evolution doesn't require
 //! a binary rebuild.
 //!
-//! Plugin *code* is loaded by the frontend via a blob-URL dynamic import
-//! seeded from `entry` in the manifest, so this scanner only needs to
-//! expose the directory path — the frontend resolves `entry` relative
-//! to it.
+//! v2.1 adds the `glyph-plugin://<id>/<path>` URI scheme so the frontend
+//! can `import()` a plugin's entry over a real URL — letting multi-file
+//! plugins use relative imports that the blob-URL approach could not
+//! resolve. `serve_plugin_asset` reads the requested file from the
+//! plugin's directory, refusing any path that escapes it.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use serde::Serialize;
 use tauri::Manager;
@@ -84,4 +85,46 @@ pub fn list_plugin_manifests(app: tauri::AppHandle) -> Result<Vec<PluginManifest
 
     out.sort_by(|a, b| a.manifest_dir.cmp(&b.manifest_dir));
     Ok(out)
+}
+
+/// MIME type for a plugin asset by file extension. ES modules must be served
+/// as a JavaScript type or the webview refuses to evaluate them.
+fn mime_for(path: &PathBuf) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("js") | Some("mjs") => "text/javascript",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("wasm") => "application/wasm",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Resolve and read a file for the `glyph-plugin://<plugin_id>/<rel_path>`
+/// scheme. Returns the bytes and MIME type, or an error string.
+///
+/// `rel_path` is rejected if it contains any parent (`..`) component so a
+/// plugin asset request can never escape its own directory.
+pub fn serve_plugin_asset(
+    app: &tauri::AppHandle,
+    plugin_id: &str,
+    rel_path: &str,
+) -> Result<(Vec<u8>, &'static str), String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+    let plugin_dir = root.join("Glyph").join("plugins").join(plugin_id);
+
+    let rel = PathBuf::from(rel_path.trim_start_matches('/'));
+    if rel
+        .components()
+        .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+    {
+        return Err(format!("rejected traversal in plugin path: {rel_path}"));
+    }
+
+    let target = plugin_dir.join(&rel);
+    let bytes = fs::read(&target).map_err(|e| format!("failed to read {}: {e}", target.display()))?;
+    Ok((bytes, mime_for(&target)))
 }

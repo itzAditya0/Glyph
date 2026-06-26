@@ -29,6 +29,8 @@ import Settings from "./components/Settings";
 import Outline from "./components/Outline";
 import TabBar from "./components/TabBar";
 import MissingFile from "./components/MissingFile";
+import CommandPalette from "./components/CommandPalette";
+import PluginPanels from "./components/PluginPanels";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -57,6 +59,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [themeHotReload, setThemeHotReload] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const settingsHydratedRef = useRef(false);
   const headings = useHeadings(content);
 
@@ -631,6 +634,11 @@ function App() {
         e.preventDefault();
         setSidebarOpen((open) => !open);
       }
+      // Command palette (plugin commands).
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
       // Tab management shortcuts (Stage 6).
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === "t") {
         e.preventDefault();
@@ -876,6 +884,7 @@ function App() {
             )}
           </>
         )}
+        {!zenMode && <PluginPanels />}
       </div>
       {!zenMode && (
         <StatusBar
@@ -901,6 +910,7 @@ function App() {
         plugins={plugins}
         onTogglePlugin={handleTogglePlugin}
       />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
