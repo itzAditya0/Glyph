@@ -10,8 +10,13 @@ A lightweight, fast Markdown editor built with [Tauri v2](https://v2.tauri.app),
 ## Features
 
 - **Split-pane editing** — write markdown on the left, live preview on the right
+- **Tabs** — multiple documents open at once, with sessions restored on relaunch
+- **Outline sidebar** — jump around large documents by heading
 - **WYSIWYG inline mode** — Typora-style editing where markdown syntax renders in-place with cursor-reveal
 - **Syntax highlighting** — Shiki-powered code blocks across 9+ languages
+- **Vim mode** — optional modal editing (Settings → Editor)
+- **Plugins** — drop-in JS plugins contributing markdown renderers, commands, and side panels
+- **Custom preview themes** — user-supplied CSS for the preview pane
 - **LaTeX math** — inline `$…$` and block `$$…$$` rendered via KaTeX
 - **Mermaid diagrams** — flowcharts, sequence, state, and gantt charts via fenced ` ```mermaid` blocks
 - **GFM support** — tables, task lists, footnotes, strikethrough
@@ -42,8 +47,16 @@ macOS uses `Cmd`; Linux and Windows use `Ctrl`.
 | `Cmd+Shift+E` | Export as HTML |
 | `Cmd+P` | Print / Export PDF |
 | `Cmd+Shift+C` | Copy as rich text |
+| `Cmd+T` / `Cmd+W` | New tab / close tab |
+| `Cmd+1`–`9` | Switch to tab N |
+| `Cmd+\` | Toggle outline sidebar |
+| `Cmd+Shift+P` | Command palette |
+| `Cmd+,` | Settings |
 | `Cmd+Shift+Z` | Toggle zen mode |
 | `Esc` | Exit zen mode |
+
+CLI: `glyph <file>` opens a file; `glyph export <file> --html` or `--pdf`
+writes an export and exits.
 
 ## Tech Stack
 
@@ -98,13 +111,17 @@ src-tauri/
 
 ## Roadmap
 
+Shipped in v2.0 / v2.1: tabs, outline sidebar, custom preview themes,
+Vim mode, a JS plugin API (markdown renderers, commands, panels), CLI
+open and HTML/PDF export, and crash-safe drafts.
+
 Ideas on the horizon (not promises):
 
-- Plugin API for custom markdown extensions
-- Vim keybindings mode
+- Native (Rust) plugin tier for compute-heavy work
 - Frontmatter-aware preview (YAML metadata)
 - Multi-file workspace / folder tree
 - Syncable settings
+- Universal converter: PDF/DOCX/HTML → Markdown
 
 ## Contributing
 
