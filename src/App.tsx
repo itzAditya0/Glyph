@@ -599,34 +599,64 @@ function App() {
     };
   }, []);
 
-  // Confirm on close (Tauri only)
+  // Confirm on close (Tauri only).
+  //
+  // Registered once on mount. The handler reads the live tab set through a
+  // ref so it never needs to re-register on every dirty-state flip — the
+  // previous version re-bound `onCloseRequested` on each `isDirty` change,
+  // and because the unlisten handle is resolved asynchronously, a close
+  // event arriving mid-rebind could hit a stale or missing handler and hang
+  // the window. We also count *all* dirty tabs, not just the active one, so
+  // background tabs with unsaved work aren't silently discarded.
+  const dirtyTabsRef = useRef(0);
+  dirtyTabsRef.current = tabsState.tabs.filter((t) => t.isDirty).length;
   useEffect(() => {
     if (!isTauri) return;
     let cleanup: (() => void) | undefined;
-    Promise.all([
-      import("@tauri-apps/api/window"),
-      import("@tauri-apps/plugin-dialog"),
-    ]).then(([{ getCurrentWindow }, { ask }]) => {
+    let cancelled = false;
+    import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
       getCurrentWindow()
         .onCloseRequested(async (event) => {
-          if (isDirty) {
-            const confirmed = await ask(
-              "You have unsaved changes. Are you sure you want to close?",
-              { title: "Glyph", kind: "warning" }
-            );
-            if (!confirmed) {
-              event.preventDefault();
-            }
+          const dirtyCount = dirtyTabsRef.current;
+          if (dirtyCount === 0) return;
+
+          const message =
+            dirtyCount === 1
+              ? "You have unsaved changes. Close anyway?"
+              : `You have unsaved changes in ${dirtyCount} tabs. Close anyway?`;
+
+          // Prevent the close up front, then decide. This guarantees the
+          // window never closes while the prompt is still resolving.
+          event.preventDefault();
+          let confirmed = false;
+          try {
+            const { ask } = await import("@tauri-apps/plugin-dialog");
+            confirmed = await ask(message, { title: "Glyph", kind: "warning" });
+          } catch (err) {
+            // If the native dialog fails to surface, fall back to the DOM
+            // confirm so the user is never trapped behind an invisible prompt.
+            console.error("Close-confirmation dialog failed, using fallback:", err);
+            confirmed = window.confirm(message);
+          }
+          if (confirmed) {
+            // `destroy()` force-closes without re-firing onCloseRequested,
+            // so there's no double-prompt.
+            getCurrentWindow().destroy();
           }
         })
         .then((fn) => {
-          cleanup = fn;
+          if (cancelled) {
+            fn();
+          } else {
+            cleanup = fn;
+          }
         });
     });
     return () => {
+      cancelled = true;
       cleanup?.();
     };
-  }, [isDirty]);
+  }, []);
 
   return (
     <div className={`${styles.layout} ${zenMode ? styles.zen : ""}`}>
