@@ -24,6 +24,8 @@ export interface GlyphConfig {
   sidebarOpen: boolean;
   /** Vim editor mode flag. Stage 2. */
   vimMode: boolean;
+  /** Re-scan and re-apply preview themes when their CSS changes on disk. v2.1. */
+  themeHotReload: boolean;
 }
 
 export const DEFAULT_CONFIG: GlyphConfig = {
@@ -33,6 +35,7 @@ export const DEFAULT_CONFIG: GlyphConfig = {
   sidebarWidth: 220,
   sidebarOpen: true,
   vimMode: false,
+  themeHotReload: false,
 };
 
 async function resolveConfigPath(): Promise<string> {

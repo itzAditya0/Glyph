@@ -56,6 +56,7 @@ function App() {
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
+  const [themeHotReload, setThemeHotReload] = useState(false);
   const settingsHydratedRef = useRef(false);
   const headings = useHeadings(content);
 
@@ -72,6 +73,7 @@ function App() {
         setPreviewTheme(cfg.previewTheme);
         setSidebarOpen(cfg.sidebarOpen);
         setPlugins(manifests);
+        setThemeHotReload(cfg.themeHotReload);
         settingsHydratedRef.current = true;
 
         // Activate plugins the user had previously enabled. Failures are
@@ -280,16 +282,23 @@ function App() {
     });
   }, [vimMode]);
 
-  // Apply the active preview theme and persist its name. `applyTheme`
-  // swaps the text of a single managed `<style>` tag in document.head so
-  // users never see an unstyled flash between selections.
+  // Apply the active preview theme whenever the selection or the discovered
+  // theme list changes. `applyTheme` swaps the text of a single managed
+  // `<style>` tag in document.head so users never see an unstyled flash —
+  // this also covers hot-reload, where `previewThemes` updates with fresh CSS.
   useEffect(() => {
     applyTheme(findTheme(previewThemes, previewTheme));
+  }, [previewTheme, previewThemes]);
+
+  // Persist the chosen theme name only when the selection changes, not when
+  // the theme list refreshes (hot-reload would otherwise rewrite config on
+  // every poll).
+  useEffect(() => {
     if (!settingsHydratedRef.current) return;
     saveConfig({ previewTheme }).catch((err) => {
       console.error("Failed to persist previewTheme setting:", err);
     });
-  }, [previewTheme, previewThemes]);
+  }, [previewTheme]);
 
   const handleToggleVimMode = useCallback(() => {
     setVimMode((current) => !current);
@@ -298,6 +307,42 @@ function App() {
   const handlePreviewThemeChange = useCallback((name: string | null) => {
     setPreviewTheme(name);
   }, []);
+
+  const handleToggleThemeHotReload = useCallback(() => {
+    setThemeHotReload((current) => {
+      const next = !current;
+      saveConfig({ themeHotReload: next }).catch((err) => {
+        console.error("Failed to persist themeHotReload setting:", err);
+      });
+      return next;
+    });
+  }, []);
+
+  // Theme hot-reload: while on, poll the themes folder and refresh the cached
+  // list when any CSS changes. The apply effect re-runs on `previewThemes`,
+  // so an edit to the active theme's file repaints the preview live. Only
+  // updates state when the content actually differs to avoid needless churn.
+  const themesSignatureRef = useRef("");
+  useEffect(() => {
+    if (!themeHotReload) return;
+    let cancelled = false;
+    const poll = async () => {
+      const themes = await listThemes();
+      if (cancelled) return;
+      const signature = JSON.stringify(themes);
+      if (signature !== themesSignatureRef.current) {
+        themesSignatureRef.current = signature;
+        setPreviewThemes(themes);
+      }
+    };
+    themesSignatureRef.current = JSON.stringify(previewThemes);
+    const id = window.setInterval(poll, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeHotReload]);
 
   const handleTogglePlugin = useCallback(
     (manifest: PluginManifest, enabled: boolean) => {
@@ -851,6 +896,8 @@ function App() {
         themes={previewThemes}
         previewTheme={previewTheme}
         onPreviewThemeChange={handlePreviewThemeChange}
+        themeHotReload={themeHotReload}
+        onToggleThemeHotReload={handleToggleThemeHotReload}
         plugins={plugins}
         onTogglePlugin={handleTogglePlugin}
       />

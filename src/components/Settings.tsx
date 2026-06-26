@@ -25,6 +25,8 @@ interface SettingsProps {
   themes: PreviewTheme[];
   previewTheme: string | null;
   onPreviewThemeChange: (name: string | null) => void;
+  themeHotReload: boolean;
+  onToggleThemeHotReload: () => void;
   plugins: PluginManifest[];
   onTogglePlugin: (manifest: PluginManifest, enabled: boolean) => void;
 }
@@ -37,6 +39,8 @@ export default function Settings({
   themes,
   previewTheme,
   onPreviewThemeChange,
+  themeHotReload,
+  onToggleThemeHotReload,
   plugins,
   onTogglePlugin,
 }: SettingsProps) {
@@ -163,6 +167,20 @@ export default function Settings({
                     </option>
                   ))}
                 </select>
+              }
+            />
+            <SettingRow
+              id="glyph-theme-hot-reload"
+              label="Reload themes on change"
+              description="Watch the themes folder and repaint the preview when a theme's CSS is edited. Useful while authoring a theme."
+              control={
+                <input
+                  id="glyph-theme-hot-reload"
+                  type="checkbox"
+                  checked={themeHotReload}
+                  onChange={onToggleThemeHotReload}
+                  className={styles.toggle}
+                />
               }
             />
           </section>
