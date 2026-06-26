@@ -1,6 +1,7 @@
 mod commands;
 mod config;
 mod drafts;
+mod pdf;
 mod plugins;
 
 use std::env;
@@ -14,9 +15,11 @@ use tauri::{Emitter, Manager};
 struct CliExportRequest {
     input: String,
     output: String,
+    /// "html" or "pdf".
+    format: String,
 }
 
-/// Parse argv for `glyph export <file> --html [--output <path>]`.
+/// Parse argv for `glyph export <file> (--html|--pdf) [--output <path>]`.
 /// Returns `None` when the user just wants to open files.
 fn parse_cli_export(args: &[String]) -> Option<CliExportRequest> {
     // args[0] is the binary path; the first positional is args[1].
@@ -27,11 +30,12 @@ fn parse_cli_export(args: &[String]) -> Option<CliExportRequest> {
 
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
-    let mut want_html = false;
+    let mut format: Option<&str> = None;
 
     while let Some(tok) = iter.next() {
         match tok.as_str() {
-            "--html" => want_html = true,
+            "--html" => format = Some("html"),
+            "--pdf" => format = Some("pdf"),
             "--output" | "-o" => {
                 if let Some(next) = iter.next() {
                     output = Some(next.clone());
@@ -48,10 +52,8 @@ fn parse_cli_export(args: &[String]) -> Option<CliExportRequest> {
         }
     }
 
-    if !want_html {
-        // Only --html is supported in v2.0; --pdf lands in a follow-up.
-        return None;
-    }
+    // No format flag means this isn't an export request.
+    let format = format?;
     let input = input?;
     let output = output.unwrap_or_else(|| {
         let input_path = PathBuf::from(&input);
@@ -59,10 +61,14 @@ fn parse_cli_export(args: &[String]) -> Option<CliExportRequest> {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("untitled");
-        format!("{stem}.html")
+        format!("{stem}.{format}")
     });
 
-    Some(CliExportRequest { input, output })
+    Some(CliExportRequest {
+        input,
+        output,
+        format: format.to_string(),
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -95,7 +101,8 @@ pub fn run() {
             plugins::list_plugin_manifests,
             drafts::list_drafts,
             drafts::save_draft,
-            drafts::delete_draft
+            drafts::delete_draft,
+            pdf::html_to_pdf
         ])
         .setup(|app| {
             // First-instance argv. Branch on `export` subcommand vs plain

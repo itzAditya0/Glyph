@@ -737,7 +737,7 @@ function App() {
     if (!isTauri) return;
     let cleanup: (() => void) | undefined;
     import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<{ input: string; output: string }>("cli-export", (event) => {
+      listen<{ input: string; output: string; format: "html" | "pdf" }>("cli-export", (event) => {
         runCliExport(event.payload).catch((err) => {
           console.error("[glyph cli] export unhandled rejection:", err);
         });

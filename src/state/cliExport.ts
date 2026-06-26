@@ -8,8 +8,10 @@
  * including KaTeX, Mermaid (pre-rendered to inline SVG), and any user
  * theme that was active.
  *
- * Only `--html` is supported in this stage. `--pdf` will arrive with
- * Tauri's headless print-to-PDF API wired up in a later minor.
+ * `--html` writes the self-contained document directly. `--pdf` renders
+ * the same document and hands it to the Rust `html_to_pdf` command, which
+ * drives a headless Chromium-family browser — no bundled PDF engine, so
+ * the binary stays small.
  */
 
 import DOMPurify from "dompurify";
@@ -23,12 +25,13 @@ import { activatePlugin, scanInstalledPlugins } from "./plugins";
 interface CliExportRequest {
   input: string;
   output: string;
+  format: "html" | "pdf";
 }
 
 /**
  * Render the input markdown through the full GUI pipeline (Shiki + KaTeX +
- * Mermaid + active theme + plugins) and write the resulting self-contained
- * HTML to `output`, then exit the process. Errors log to stderr and exit
+ * Mermaid + active theme + plugins) and write the result to `output` in the
+ * requested format, then exit the process. Errors log to stderr and exit
  * with a non-zero status so shell scripts can react.
  *
  * Register this as a one-shot Tauri event listener at app startup.
@@ -75,12 +78,21 @@ export async function runCliExport(request: CliExportRequest): Promise<never> {
       "untitled";
 
     const doc = buildHtmlDocument(withDiagrams, baseName, "light", activeTheme?.css ?? null);
-    await invoke("save_file", { path: request.output, content: doc });
+
+    if (request.format === "pdf") {
+      // Hand the rendered HTML to the Rust converter, which writes the PDF
+      // via a headless browser. Throws (caught below, exit 4) if none found.
+      await invoke("html_to_pdf", { html: doc, outPath: request.output });
+    } else {
+      await invoke("save_file", { path: request.output, content: doc });
+    }
 
     console.log(`[glyph cli] wrote ${request.output}`);
     return exit(0);
   } catch (err) {
     console.error("[glyph cli] export failed:", err);
-    return exit(3);
+    // Exit 4 for PDF-specific failures (e.g. no browser), 3 otherwise, so
+    // scripts can distinguish "no PDF engine" from a general render error.
+    return exit(request.format === "pdf" ? 4 : 3);
   }
 }
