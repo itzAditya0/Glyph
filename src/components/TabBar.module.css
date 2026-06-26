@@ -72,6 +72,13 @@
   white-space: nowrap;
 }
 
+/* Missing-file tab: dimmed + struck through so it reads as unavailable. */
+.missing .tabLabel {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--color-danger);
+}
+
 .dirtyDot {
   width: 6px;
   height: 6px;

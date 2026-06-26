@@ -73,10 +73,10 @@ export default function TabBar({ confirmCloseDirty }: TabBarProps) {
               role="tab"
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
-              className={`${styles.tab} ${isActive ? styles.active : ""}`}
+              className={`${styles.tab} ${isActive ? styles.active : ""} ${tab.missing ? styles.missing : ""}`}
               onClick={() => actions.switchTo(tab.id)}
               onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
-              title={tab.path ?? tab.fileName}
+              title={tab.missing ? `${tab.path} (not found)` : tab.path ?? tab.fileName}
             >
               <span className={styles.tabLabel}>{tab.fileName}</span>
               {tab.isDirty && <span className={styles.dirtyDot} aria-label="Unsaved changes" />}

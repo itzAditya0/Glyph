@@ -35,6 +35,12 @@ export interface Tab {
   cursor: { line: number; col: number };
   /** Preview pane scroll position, persisted by Stage 6. */
   scrollTop: number;
+  /**
+   * True when this tab was restored from a session but its file could no
+   * longer be read (moved/deleted). The tab renders as a placeholder with
+   * a Remove action rather than an empty editable buffer.
+   */
+  missing?: boolean;
 }
 
 export interface TabsState {
@@ -87,6 +93,7 @@ export interface TabsActions {
       content: string;
       cursor: { line: number; col: number };
       scrollTop: number;
+      missing?: boolean;
     }>,
     activePath: string | null,
   ) => void;
@@ -147,6 +154,20 @@ function reducer(state: TabsState, action: Action): TabsState {
     case "open": {
       const existing = state.tabs.find((t) => t.path === action.path);
       if (existing) {
+        // Reopening a path that's currently a missing-file placeholder heals
+        // it: refresh the content and clear the missing flag in place so the
+        // user keeps the same tab position.
+        if (existing.missing) {
+          return {
+            ...state,
+            activeId: existing.id,
+            tabs: state.tabs.map((t) =>
+              t.id === existing.id
+                ? { ...t, content: action.content, isDirty: false, missing: false }
+                : t,
+            ),
+          };
+        }
         return { ...state, activeId: existing.id };
       }
       const tab: Tab = {
@@ -316,7 +337,12 @@ export function TabsProvider({ children, initialContent }: TabsProviderProps) {
   const actions = useMemo<TabsActions>(() => {
     return {
       open(path, content) {
-        const id = generateId();
+        // If this path is already open, the reducer reuses that tab's id
+        // (and heals it when it was a missing placeholder). Update the
+        // baseline against the existing id so dirty tracking stays correct
+        // after a heal; otherwise seed the baseline for the new tab's id.
+        const existing = tabsRef.current.find((t) => t.path === path);
+        const id = existing?.id ?? generateId();
         savedContentRef.current.set(id, content);
         dispatch({ type: "open", id, path, content });
       },
@@ -420,6 +446,7 @@ export function TabsProvider({ children, initialContent }: TabsProviderProps) {
             isDirty: false,
             cursor: entry.cursor,
             scrollTop: entry.scrollTop,
+            missing: entry.missing ?? false,
           };
         });
         const match = activePath

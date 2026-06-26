@@ -27,6 +27,7 @@ import { useHeadings, type HeadingEntry } from "./hooks/useHeadings";
 import Settings from "./components/Settings";
 import Outline from "./components/Outline";
 import TabBar from "./components/TabBar";
+import MissingFile from "./components/MissingFile";
 import styles from "./App.module.css";
 
 type MermaidModule = {
@@ -112,19 +113,29 @@ function App() {
         content: string;
         cursor: { line: number; col: number };
         scrollTop: number;
+        missing?: boolean;
       }> = [];
       results.forEach((result, i) => {
+        const t = session.tabs[i];
         if (result.status === "fulfilled") {
-          const t = session.tabs[i];
           restored.push({
             path: t.path,
             content: result.value,
             cursor: t.cursor,
             scrollTop: t.scrollTop,
           });
+        } else {
+          // File moved or deleted since last session — keep a placeholder
+          // tab so the user can see what was lost and dismiss it, rather
+          // than silently dropping it.
+          restored.push({
+            path: t.path,
+            content: "",
+            cursor: t.cursor,
+            scrollTop: t.scrollTop,
+            missing: true,
+          });
         }
-        // Rejected entries silently skipped — placeholder-tab UI for
-        // missing files is deferred per V2_Plan §3.3.
       });
       if (cancelled) return;
       if (restored.length > 0) {
@@ -343,6 +354,16 @@ function App() {
     },
     [openFileFromPath, isDirty]
   );
+
+  // Missing-file placeholder actions. Retry re-reads the path; on success the
+  // `open` action heals the placeholder tab in place. Remove dismisses it.
+  const handleRetryMissing = useCallback(() => {
+    if (tab?.path) openFileFromPath(tab.path);
+  }, [tab?.path, openFileFromPath]);
+
+  const handleRemoveMissing = useCallback(() => {
+    if (tab) tabsActions.closeOrReplace(tab.id);
+  }, [tab, tabsActions]);
 
   const [copiedNotice, setCopiedNotice] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
@@ -688,23 +709,35 @@ function App() {
             <Outline headings={headings} onHeadingClick={handleHeadingClick} />
           </div>
         )}
-        <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
-          <Editor
-            ref={editorRef}
-            value={content}
-            onChange={setContent}
-            onCursorChange={setCursor}
-            resolvedTheme={resolvedTheme}
-            wysiwygMode={wysiwygMode}
-            vimMode={vimMode}
-          />
-        </div>
-        {!wysiwygMode && (
+        {tab?.missing ? (
+          <div className={styles.editorFull}>
+            <MissingFile
+              path={tab.path ?? ""}
+              onRetry={handleRetryMissing}
+              onRemove={handleRemoveMissing}
+            />
+          </div>
+        ) : (
           <>
-            <div className={styles.divider} />
-            <div className={styles.previewPane}>
-              <Preview html={html} />
+            <div className={wysiwygMode ? styles.editorFull : styles.editorPane}>
+              <Editor
+                ref={editorRef}
+                value={content}
+                onChange={setContent}
+                onCursorChange={setCursor}
+                resolvedTheme={resolvedTheme}
+                wysiwygMode={wysiwygMode}
+                vimMode={vimMode}
+              />
             </div>
+            {!wysiwygMode && (
+              <>
+                <div className={styles.divider} />
+                <div className={styles.previewPane}>
+                  <Preview html={html} />
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
