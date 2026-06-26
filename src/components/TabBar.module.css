@@ -79,6 +79,15 @@
   text-decoration-color: var(--color-danger);
 }
 
+/* Drag-to-reorder feedback. */
+.dragging {
+  opacity: 0.5;
+}
+
+.dropTarget {
+  box-shadow: inset 2px 0 0 0 var(--color-accent);
+}
+
 .dirtyDot {
   width: 6px;
   height: 6px;
