@@ -73,18 +73,18 @@ writes an export and exits.
 ### Install on macOS (Homebrew)
 
 ```bash
-brew install --cask --no-quarantine itzAditya0/tap/glyph
+brew install --cask itzAditya0/tap/glyph
 ```
 
 Glyph is open source and isn't Apple-notarized (that needs a paid Apple
-Developer account). The `--no-quarantine` flag tells Homebrew to skip the
-download quarantine so the app opens normally — without it, macOS would show a
-misleading "Glyph is damaged" Gatekeeper warning. Upgrades: `brew upgrade --cask glyph`.
+Developer account), so macOS would normally quarantine the download and show a
+misleading "Glyph is damaged" warning. The Homebrew cask clears that quarantine
+flag automatically on install, so the app just opens — no Terminal step needed.
+Upgrades: `brew upgrade --cask glyph`.
 
 You can also grab the `.dmg` directly from the
-[Releases page](https://github.com/itzAditya0/Glyph/releases). If you do and see
-the "damaged" warning, the Homebrew command above is the smoothest fix; the DMG
-itself is fine.
+[Releases page](https://github.com/itzAditya0/Glyph/releases), but the Homebrew
+install above is the smoothest path on macOS; the DMG itself is fine.
 
 ### Build from source
 
